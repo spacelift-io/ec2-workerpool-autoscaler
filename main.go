@@ -107,7 +107,7 @@ func main() {
 
 		if string(groupId) != cfg.AutoscalingGroupID {
 			logger.Error("worker belongs to a different autoscaling group")
-			return
+			os.Exit(1)
 		}
 
 		workerInstanceIDs[instanceID] = worker.ID
