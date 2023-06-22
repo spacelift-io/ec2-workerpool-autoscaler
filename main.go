@@ -2,12 +2,9 @@ package main
 
 import (
 	"context"
-	"fmt"
-	"log"
 	"net/http"
 	"os"
 	"sort"
-	"strconv"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -15,59 +12,63 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/autoscaling"
 	"github.com/aws/aws-sdk-go-v2/service/autoscaling/types"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
+	"github.com/caarlos0/env"
 	"github.com/spacelift-io/spacectl/client"
 	"github.com/spacelift-io/spacectl/client/session"
+	"golang.org/x/exp/slog"
 
 	"gh.com/mw/autoscalr/internal"
 )
 
-var (
-	// Spacelift-related variables.
-	// TODO: use some library to parse these envvars.
-	spaceliftAPIKeyID     = os.Getenv("SPACELIFT_API_KEY_ID")
-	spaceliftAPISecret    = os.Getenv("SPACELIFT_API_SECRET")
-	spaceliftAPIEndpoint  = os.Getenv("SPACELIFT_API_ENDPOINT")
-	spaceliftWorkerPoolID = os.Getenv("SPACELIFT_WORKER_POOL_ID")
+type runtimeConfig struct {
+	SpaceliftAPIKeyID     string `env:"SPACELIFT_API_KEY_ID,notEmpty"`
+	SpaceliftAPISecret    string `env:"SPACELIFT_API_SECRET,notEmpty"`
+	SpaceliftAPIEndpoint  string `env:"SPACELIFT_API_ENDPOINT,notEmpty"`
+	SpaceliftWorkerPoolID string `env:"SPACELIFT_WORKER_POOL_ID,notEmpty"`
 
-	// AWS-related variables.
-	autoscalingGroupID   = os.Getenv("AUTOSCALING_GROUP_ID")
-	autoscalingRegion    = os.Getenv("AUTOSCALING_REGION")
-	autoscalingMaxKill   = os.Getenv("AUTOSCALING_MAX_KILL")
-	autoscalingMaxCreate = os.Getenv("AUTOSCALING_MAX_CREATE")
-)
+	AutoscalingGroupID   string `env:"AUTOSCALING_GROUP_ID,notEmpty"`
+	AutoscalingRegion    string `env:"AUTOSCALING_REGION,notEmpty"`
+	AutoscalingMaxKill   int    `env:"AUTOSCALING_MAX_KILL" envDefault:"1"`
+	AutoscalingMaxCreate int    `env:"AUTOSCALING_MAX_CREATE" envDefault:"1"`
+}
 
 func main() {
-	maxKill, err := strconv.ParseInt(autoscalingMaxKill, 10, 64)
-	if err != nil {
-		log.Panicf("could not parse AUTOSCALING_MAX_KILL: %v", err)
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+
+	var cfg runtimeConfig
+	if err := env.Parse(&cfg); err != nil {
+		logger.Error("could not parse environment variables: %v", err)
 	}
 
-	maxCreate, err := strconv.ParseInt(autoscalingMaxCreate, 10, 64)
-	if err != nil {
-		log.Panicf("could not parse AUTOSCALING_MAX_CREATE: %v", err)
-	}
+	logger = logger.With(
+		"asg_id", cfg.AutoscalingGroupID,
+		"worker_pool_id", cfg.SpaceliftWorkerPoolID,
+	)
 
 	ctx := context.Background()
 
 	slSession, err := session.FromAPIKey(ctx, http.DefaultClient)(
-		spaceliftAPIEndpoint,
-		spaceliftAPIKeyID,
-		spaceliftAPISecret,
+		cfg.SpaceliftAPIEndpoint,
+		cfg.SpaceliftAPIKeyID,
+		cfg.SpaceliftAPISecret,
 	)
 
 	if err != nil {
-		log.Panicf("could not build Spacelift session: %v", err)
+		logger.Error("could not build Spacelift session: %v", err)
+		os.Exit(1)
 	}
 
 	slClient := client.New(http.DefaultClient, slSession)
 
 	var wpDetails internal.WorkerPoolDetails
-	if err := slClient.Query(ctx, &wpDetails, map[string]any{"workerPool": spaceliftWorkerPoolID}); err != nil {
-		log.Panicf("could not list Spacelift workers: %v", err)
+	if err := slClient.Query(ctx, &wpDetails, map[string]any{"workerPool": cfg.SpaceliftWorkerPoolID}); err != nil {
+		logger.Error("could not list Spacelift workers: %v", err)
+		os.Exit(1)
 	}
 
 	if wpDetails.Pool == nil {
-		log.Panicf("Spacelift worker pool %q does not exist or you have no access to it", spaceliftWorkerPoolID)
+		logger.Error("worker pool does not exist or you have no access to it")
+		os.Exit(1)
 	}
 
 	// First, let's sort the workers by their creation time. This is important
@@ -90,13 +91,22 @@ func main() {
 	// same autoscaling group. If either of these conditions is not met, we
 	// should not proceed because the results are not going to be reliable.
 	for _, worker := range workers {
+		logger = logger.With("worker_id", worker.ID)
+
 		groupId, instanceID, err := worker.InstanceIdentity()
 		if err != nil {
-			log.Panicf("invalid metadata for worker %s: %v", worker.ID, err)
+			logger.Error("invalid metadata: %v", err)
+			os.Exit(1)
 		}
 
-		if string(groupId) != autoscalingGroupID {
-			log.Panicf("worker %s belongs to a different autoscaling group (%s)", worker.ID, groupId)
+		logger = logger.With(
+			"instance_id", instanceID,
+			"instance_asg", groupId,
+		)
+
+		if string(groupId) != cfg.AutoscalingGroupID {
+			logger.Error("worker belongs to a different autoscaling group")
+			return
 		}
 
 		workerInstanceIDs[instanceID] = worker.ID
@@ -108,22 +118,25 @@ func main() {
 
 	// Now that we have data from Spacelift, we can get the current state of
 	// the autoscaling group from AWS.
-	awsConfig, err := config.LoadDefaultConfig(ctx, config.WithRegion(autoscalingRegion))
+	awsConfig, err := config.LoadDefaultConfig(ctx, config.WithRegion(cfg.AutoscalingRegion))
 	if err != nil {
-		log.Panicf("could not load AWS config: %v", err)
+		logger.Error("could not load AWS config: %v", err)
+		os.Exit(1)
 	}
 
 	asClient := autoscaling.NewFromConfig(awsConfig)
 	groups, err := asClient.DescribeAutoScalingGroups(ctx, &autoscaling.DescribeAutoScalingGroupsInput{
-		AutoScalingGroupNames: []string{autoscalingGroupID},
+		AutoScalingGroupNames: []string{cfg.AutoscalingGroupID},
 	})
 
 	if err != nil {
-		log.Panicf("could not list autoscaling groups: %v", err)
+		logger.Error("could not list autoscaling groups: %v", err)
+		os.Exit(1)
 	}
 
 	if len(groups.AutoScalingGroups) != 1 {
-		log.Panicf("could not find autoscaling group %q", autoscalingGroupID)
+		logger.Error("could not find autoscaling group")
+		os.Exit(1)
 	}
 
 	group := groups.AutoScalingGroups[0]
@@ -132,17 +145,23 @@ func main() {
 	// corresponding worker in Spacelift, or that we have "stray" machines.
 	instancesWithoutCorrespondingWorkers := make([]string, 0)
 	for _, instance := range group.Instances {
+		if instance.InstanceId == nil {
+			// Should never happen, but let's be extra safe around nil pointers.
+			logger.Error("autoscaling group contains an instance without an ID")
+		}
+
+		logger = logger.With(
+			"instance_id", *instance.InstanceId,
+			"state", instance.LifecycleState,
+		)
+
 		// Instance not in service, we don't care about it.
 		if instance.LifecycleState != types.LifecycleStateInService {
 			continue
 		}
 
-		if instance.InstanceId == nil {
-			// Should never happen, but let's be extra safe around nil pointers.
-			log.Fatal("autoscaling group contains an instance without an ID")
-		}
-
 		if _, ok := workerInstanceIDs[internal.InstanceID(*instance.InstanceId)]; !ok {
+			logger.Warn("instance has no corresponding worker")
 			instancesWithoutCorrespondingWorkers = append(instancesWithoutCorrespondingWorkers, *instance.InstanceId)
 		}
 	}
@@ -159,29 +178,42 @@ func main() {
 	})
 
 	if err != nil {
-		log.Panicf("could not list EC2 instances: %v", err)
+		logger.Error("could not list EC2 instances: %v", err)
+		os.Exit(1)
 	}
 
 	for _, reservation := range instancesOutput.Reservations {
 		for _, instance := range reservation.Instances {
+			logger = logger.With("instance_id", *instance.InstanceId)
+
 			if instance.LaunchTime == nil {
-				log.Panicf("instance %s has no launch time", *instance.InstanceId)
+				logger.Error("instance has no launch time")
+				os.Exit(1)
 			}
+
+			instanceAge := time.Since(*instance.LaunchTime)
+
+			logger = logger.With(
+				"launch_time", instance.LaunchTime,
+				"instance_age", instanceAge,
+			)
 
 			// If the machine was only created recently (say a generous window of 10
 			// minutes), it is possible that it hasn't managed to register itself with
 			// Spacelift yet. But if it's been around for a while we will want to kill
 			// it and remove it from the ASG.
-			if time.Since(*instance.LaunchTime) > 10*time.Minute {
-				log.Printf("instance %s has no corresponding worker in Spacelift, removing from the ASG", *instance.InstanceId)
+			if instanceAge > 10*time.Minute {
+				logger.Warn("instance has no corresponding worker in Spacelift, removing from the ASG")
 
-				if err := killInstance(ctx, asClient, ec2Client, *instance.InstanceId); err != nil {
-					log.Panicf("could not kill instance %s: %v", *instance.InstanceId, err)
+				if err := killInstance(ctx, asClient, ec2Client, cfg.SpaceliftWorkerPoolID, *instance.InstanceId); err != nil {
+					logger.Error("could not kill instance: %v", err)
+					os.Exit(1)
 				}
 
 				// We don't want to kill too many instances at once, so let's
 				// return after the first successfully killed one.
-				log.Printf("instance %s successfully removed from the ASG and terminated", *instance.InstanceId)
+				logger.Info("instance successfully removed from the ASG and terminated", *instance.InstanceId)
+				return
 			}
 		}
 	}
@@ -192,20 +224,21 @@ func main() {
 	// 1. We look at the total number of workers. If it's at the minimum or the
 	// maximum already, we do nothing.
 	if group.MaxSize == nil {
-		log.Panicf("autoscaling group %q has no maximum size", autoscalingGroupID)
+		logger.Error("autoscaling group has no maximum size")
+		os.Exit(1)
 	}
 
 	if len(workers) >= int(*group.MaxSize) {
-		log.Printf("autoscaling group %q is already at maximum size", autoscalingGroupID)
+		logger.Warn("autoscaling group is already at maximum size")
 		return
 	}
 
 	if group.MinSize == nil {
-		log.Panicf("autoscaling group %q has no minimum size", autoscalingGroupID)
+		logger.Error("autoscaling group has no minimum size")
 	}
 
 	if len(workers) <= int(*group.MinSize) {
-		log.Printf("autoscaling group %q is already at minimum size", autoscalingGroupID)
+		logger.Warn("autoscaling group is already at minimum size")
 		return
 	}
 
@@ -216,7 +249,7 @@ func main() {
 	switch {
 	case difference == 0:
 		// If there's no difference, we do nothing.
-		log.Printf("autoscaling group %q is already at the desired size", autoscalingGroupID)
+		logger.Info("autoscaling group exactly at the right size")
 		return
 	case difference > 0:
 		// If there are more pending runs than idle workers, we need to scale up.
@@ -227,8 +260,8 @@ func main() {
 		//   by the user.
 
 		spinUpBy := int32(difference)
-		if difference > int(maxCreate) {
-			spinUpBy = int32(maxCreate)
+		if difference > cfg.AutoscalingMaxCreate {
+			spinUpBy = int32(cfg.AutoscalingMaxCreate)
 		}
 
 		newASGCapacity := *group.DesiredCapacity + spinUpBy
@@ -236,18 +269,20 @@ func main() {
 			newASGCapacity = *group.MaxSize
 		}
 
-		log.Printf("autoscaling group %q is scaling to %d", autoscalingGroupID, newASGCapacity)
+		logger = logger.With("new_capacity", newASGCapacity)
+		logger.Info("scaling up")
 
 		_, err = asClient.SetDesiredCapacity(ctx, &autoscaling.SetDesiredCapacityInput{
-			AutoScalingGroupName: aws.String(autoscalingGroupID),
+			AutoScalingGroupName: aws.String(cfg.AutoscalingGroupID),
 			DesiredCapacity:      aws.Int32(newASGCapacity),
 		})
 
 		if err != nil {
-			log.Panicf("could not scale autoscaling group %q: %v", autoscalingGroupID, err)
+			logger.Error("could not scale autoscaling group: %v", err)
+			os.Exit(1)
 		}
 
-		log.Printf("autoscaling group %q scaled to %d", autoscalingGroupID, newASGCapacity)
+		logger.Info("scaled up successfully")
 		return
 	case difference < 0:
 		// If the number of idle workers is greater than the number of pending
@@ -257,8 +292,8 @@ func main() {
 		// - we should not spin down more machines at once than the maximum declared
 		//   by the user.
 		killCount := -difference
-		if killCount > int(maxKill) {
-			killCount = int(maxKill)
+		if killCount > cfg.AutoscalingMaxKill {
+			killCount = cfg.AutoscalingMaxKill
 		}
 
 		// Check how many we can kill without going below the minimum capacity.
@@ -267,43 +302,53 @@ func main() {
 			killCount = int(overMinimum)
 		}
 
-		fmt.Printf("we will try killing %s workers", killCount)
+		logger.Info("killing up to %d workers", killCount)
 
 		for i := 0; i < killCount; i++ {
 			worker := idle[i]
+			_, instanceID, _ := worker.InstanceIdentity()
 
-			log.Printf("autoscaling group %q is scaling down, killing worker %q", autoscalingGroupID, worker.ID)
+			logger = logger.With(
+				"worker_id", worker.ID,
+				"instance_id", instanceID,
+				"already_killed", i,
+			)
 
-			drained, err := drainWorker(ctx, slClient, worker.ID)
+			logger.Info("killing worker")
+
+			drained, err := drainWorker(ctx, slClient, cfg.SpaceliftWorkerPoolID, worker.ID)
 			if err != nil {
-				log.Panicf("could not drain worker %q: %v", worker.ID, err)
+				logger.Error("could not drain worker: %v", err)
+				os.Exit(1)
 			}
 
 			if !drained {
-				log.Printf("worker %q was not drained, not killing any more workers", worker.ID)
+				logger.Warn("idle worker got a job, not killing any more")
+				return
 			}
 
-			_, instanceID, _ := worker.InstanceIdentity()
-
-			if err := killInstance(ctx, asClient, ec2Client, string(instanceID)); err != nil {
-				log.Printf("could not kill instance %q: %v", instanceID, err)
+			if err := killInstance(ctx, asClient, ec2Client, cfg.AutoscalingGroupID, string(instanceID)); err != nil {
+				logger.Error("could not kill instance: %v", err)
 
 				// If the killing is unsuccessful, we don't want to kill any more
 				// but we can undrain the worker for the next run.
-				_, err = workerDrainSet(ctx, slClient, worker.ID, false)
-				if err != nil {
-					log.Panicf("could not undrain unkillable worker %q: %v", worker.ID, err)
+				if _, err = workerDrainSet(ctx, slClient, cfg.SpaceliftWorkerPoolID, worker.ID, false); err != nil {
+					logger.Error("could not undrain unkillable worker: %v", err)
 				} else {
-					log.Panicf("undrained unkillable worker %q", worker.ID)
+					logger.Error("successfully undrained unkillable worker")
 				}
+
+				os.Exit(1)
 			}
+
+			logger.Info("worker killed successfully")
 		}
 	}
 }
 
-func killInstance(ctx context.Context, asClient *autoscaling.Client, ec2Client *ec2.Client, instanceID string) (err error) {
+func killInstance(ctx context.Context, asClient *autoscaling.Client, ec2Client *ec2.Client, groupID, instanceID string) (err error) {
 	_, err = asClient.DetachInstances(ctx, &autoscaling.DetachInstancesInput{
-		AutoScalingGroupName:           aws.String(autoscalingGroupID),
+		AutoScalingGroupName:           aws.String(groupID),
 		InstanceIds:                    []string{instanceID},
 		ShouldDecrementDesiredCapacity: aws.Bool(true),
 	})
@@ -321,8 +366,8 @@ func killInstance(ctx context.Context, asClient *autoscaling.Client, ec2Client *
 }
 
 // workerDrainSet(workerPool: ID!, id: ID!, drain: Boolean!): Worker!
-func drainWorker(ctx context.Context, client client.Client, workerID string) (drained bool, err error) {
-	worker, err := workerDrainSet(ctx, client, workerID, true)
+func drainWorker(ctx context.Context, client client.Client, wpID, workerID string) (drained bool, err error) {
+	worker, err := workerDrainSet(ctx, client, workerID, wpID, true)
 	if err != nil {
 		return false, err
 	}
@@ -335,16 +380,16 @@ func drainWorker(ctx context.Context, client client.Client, workerID string) (dr
 	// However, if the worker is now busy, we we should undrain it immediately
 	// to let it process jobs since clearly some have arrived while we were busy
 	// doing other things.
-	_, err = workerDrainSet(ctx, client, workerID, false)
+	_, err = workerDrainSet(ctx, client, workerID, wpID, false)
 
 	return false, err
 }
 
-func workerDrainSet(ctx context.Context, client client.Client, workerID string, drain bool) (*internal.Worker, error) {
+func workerDrainSet(ctx context.Context, client client.Client, wpID, workerID string, drain bool) (*internal.Worker, error) {
 	var mutation internal.WorkerDrainSet
 
 	err := client.Mutate(ctx, mutation, map[string]any{
-		"workerPoolId": spaceliftWorkerPoolID,
+		"workerPoolId": wpID,
 		"id":           workerID,
 		"drain":        drain,
 	})
