@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"os"
 	"sort"
@@ -218,6 +219,22 @@ func main() {
 		}
 	}
 
+	// Let's make sure that the number of workers matches the number of
+	// instances in the ASG. Previously we covered a scenario where there are
+	// "dead" instances without a corresponding worker, but there could also be
+	// workers without a corresponding instance. This could happen if the worker
+	// has crashed and we haven't yet marked it as gone. If this is the case,
+	// we want to skip performing any scaling operations and just wait for
+	// things to settle down.
+	if len(workers) != len(group.Instances) {
+		logger.With(
+			"workers", len(workers),
+			"instances", len(group.Instances),
+		).Warn("number of workers does not match the number of instances in the ASG")
+
+		return
+	}
+
 	// If we got this far, we can get to our main business of scaling.
 	// The logic is as follows:
 	//
@@ -335,7 +352,7 @@ func main() {
 				if _, err = workerDrainSet(ctx, slClient, cfg.SpaceliftWorkerPoolID, worker.ID, false); err != nil {
 					logger.Error("could not undrain unkillable worker: %v", err)
 				} else {
-					logger.Error("successfully undrained unkillable worker")
+					logger.Warn("successfully undrained unkillable worker")
 				}
 
 				os.Exit(1)
@@ -354,13 +371,17 @@ func killInstance(ctx context.Context, asClient *autoscaling.Client, ec2Client *
 	})
 
 	if err != nil {
-		return
+		return fmt.Errorf("could not detach instance from autoscaling group: %v", err)
 	}
 
 	// Now that the instance is detached from the ASG, we can terminate it.
 	_, err = ec2Client.TerminateInstances(ctx, &ec2.TerminateInstancesInput{
 		InstanceIds: []string{instanceID},
 	})
+
+	if err != nil {
+		return fmt.Errorf("could not terminate instance: %v", err)
+	}
 
 	return
 }
