@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/service/autoscaling"
+	autoscalingtypes "github.com/aws/aws-sdk-go-v2/service/autoscaling/types"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/franela/goblin"
@@ -127,6 +129,81 @@ func TestController(t *testing.T) {
 				g.Describe("when the instance has the correct ID and launch time", func() {
 					g.It("should return the instance", func() {
 						Expect(instances).To(HaveLen(1))
+					})
+				})
+			})
+		})
+
+		g.Describe("GetAutoscalingGroup", func() {
+			var group *autoscalingtypes.AutoScalingGroup
+
+			var input *autoscaling.DescribeAutoScalingGroupsInput
+			var apiCall *mock.Call
+
+			g.BeforeEach(func() {
+				input = nil
+
+				apiCall = mockAutoscaling.On(
+					"DescribeAutoScalingGroups",
+					mock.Anything,
+					mock.MatchedBy(func(in any) bool {
+						input = in.(*autoscaling.DescribeAutoScalingGroupsInput)
+						return true
+					}),
+					mock.Anything,
+				)
+			})
+
+			g.JustBeforeEach(func() { group, err = sut.GetAutoscalingGroup(ctx) })
+
+			g.Describe("when the API call fails", func() {
+				g.BeforeEach(func() { apiCall.Return(nil, errors.New("bacon")) })
+
+				g.It("sends the correct input", func() {
+					Expect(input).NotTo(BeNil())
+					Expect(input.AutoScalingGroupNames).To(Equal([]string{asgName}))
+				})
+
+				g.It("should return an error", func() {
+					Expect(group).To(BeNil())
+					Expect(err).To(MatchError("could not get autoscaling group details: bacon"))
+				})
+			})
+
+			g.Describe("when the API call succeeds", func() {
+				var output *autoscaling.DescribeAutoScalingGroupsOutput
+
+				g.BeforeEach(func() {
+					output = &autoscaling.DescribeAutoScalingGroupsOutput{}
+					apiCall.Return(output, nil)
+				})
+
+				g.Describe("when it returns no groups", func() {
+					g.BeforeEach(func() { output.AutoScalingGroups = nil })
+
+					g.It("should return an error", func() {
+						Expect(group).To(BeNil())
+						Expect(err).To(MatchError("could not find autoscaling group test-asg"))
+					})
+				})
+
+				g.Describe("when it returns multiple groups", func() {
+					g.BeforeEach(func() {
+						output.AutoScalingGroups = []autoscalingtypes.AutoScalingGroup{{}, {}}
+					})
+
+					g.It("should return an error", func() {
+						Expect(group).To(BeNil())
+						Expect(err).To(MatchError("found more than one autoscaling group with name test-asg"))
+					})
+				})
+
+				g.Describe("when it returns a single group", func() {
+					g.BeforeEach(func() { output.AutoScalingGroups = []autoscalingtypes.AutoScalingGroup{{}} })
+
+					g.It("should return the group", func() {
+						Expect(err).NotTo(HaveOccurred())
+						Expect(group).NotTo(BeNil())
 					})
 				})
 			})
