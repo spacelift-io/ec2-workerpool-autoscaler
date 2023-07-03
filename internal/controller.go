@@ -16,6 +16,8 @@ import (
 	"github.com/aws/aws-xray-sdk-go/xray"
 	spacelift "github.com/spacelift-io/spacectl/client"
 	"github.com/spacelift-io/spacectl/client/session"
+
+	"gh.com/mw/autoscalr/internal/ifaces"
 )
 
 // Controller is responsible for handling interactions with external systems
@@ -23,9 +25,9 @@ import (
 // package can focus on the core logic.
 type Controller struct {
 	// Clients.
-	Autoscaling *autoscaling.Client
-	EC2         *ec2.Client
-	Spacelift   spacelift.Client
+	Autoscaling ifaces.Autoscaling
+	EC2         ifaces.EC2
+	Spacelift   ifaces.Spacelift
 
 	// Configuration.
 	AWSAutoscalingGroupName string
@@ -60,7 +62,6 @@ func NewController(ctx context.Context, cfg *RuntimeConfig) (*Controller, error)
 		AWSAutoscalingGroupName: cfg.AutoscalingGroupName,
 		SpaceliftWorkerPoolID:   cfg.SpaceliftWorkerPoolID,
 	}, nil
-
 }
 
 // DescribeInstances returns the details of the given instances from AWS,
@@ -104,9 +105,6 @@ func (c *Controller) DescribeInstances(ctx context.Context, instanceIDs []string
 //
 // It makes sure that the autoscaling group exists and that there is only
 // one autoscaling group with the given name.
-//
-// There are also checks in place to make sure that the autoscaling group
-// has all the correct information provided.
 func (c *Controller) GetAutoscalingGroup(ctx context.Context) (out *autoscalingtypes.AutoScalingGroup, err error) {
 	xray.Capture(ctx, "aws.asg.get", func(ctx context.Context) error {
 		var output *autoscaling.DescribeAutoScalingGroupsOutput
@@ -129,24 +127,6 @@ func (c *Controller) GetAutoscalingGroup(ctx context.Context) (out *autoscalingt
 		}
 
 		out = &output.AutoScalingGroups[0]
-
-		if out.MaxSize == nil {
-			err = errors.New("could not find max size for autoscaling group")
-			return err
-		}
-		xray.AddMetadata(ctx, "asg_max_size", aws.Int32Value(out.MaxSize))
-
-		if out.MinSize == nil {
-			err = errors.New("could not find min size for autoscaling group")
-			return err
-		}
-		xray.AddMetadata(ctx, "asg_min_size", aws.Int32Value(out.MinSize))
-
-		if out.DesiredCapacity == nil {
-			err = errors.New("could not find desired capacity for autoscaling group")
-			return err
-		}
-		xray.AddMetadata(ctx, "asg_desired_capacity", aws.Int32Value(out.DesiredCapacity))
 
 		return nil
 	})
