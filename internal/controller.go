@@ -214,7 +214,8 @@ func (c *Controller) KillInstance(ctx context.Context, instanceID string) (err e
 		})
 
 		if err != nil {
-			return fmt.Errorf("could not detach instance from autoscaling group: %v", err)
+			err = fmt.Errorf("could not detach instance from autoscaling group: %v", err)
+			return err
 		}
 
 		// Now that the instance is detached from the ASG, we can terminate it.
@@ -223,7 +224,8 @@ func (c *Controller) KillInstance(ctx context.Context, instanceID string) (err e
 		})
 
 		if err != nil {
-			return fmt.Errorf("could not terminate instance: %v", err)
+			err = fmt.Errorf("could not terminate detached instance: %v", err)
+			return err
 		}
 
 		return nil

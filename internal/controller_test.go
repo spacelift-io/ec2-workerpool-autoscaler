@@ -401,5 +401,83 @@ func TestController(t *testing.T) {
 				})
 			})
 		})
+
+		g.Describe("KillInstance", func() {
+			const instanceID = "test-instance"
+
+			var detachCall *mock.Call
+			var detachInput *autoscaling.DetachInstancesInput
+
+			g.BeforeEach(func() {
+				detachInput = nil
+
+				detachCall = mockAutoscaling.On(
+					"DetachInstances",
+					mock.Anything,
+					mock.MatchedBy(func(in *autoscaling.DetachInstancesInput) bool {
+						detachInput = in
+						return true
+					}),
+					mock.Anything,
+				)
+			})
+
+			g.JustBeforeEach(func() { err = sut.KillInstance(ctx, instanceID) })
+
+			g.Describe("when the detach call fails", func() {
+				g.BeforeEach(func() { detachCall.Return(nil, errors.New("bacon")) })
+
+				g.It("send the correct input", func() {
+					Expect(detachInput).NotTo(BeNil())
+					Expect(detachInput.InstanceIds).To(ConsistOf(instanceID))
+					Expect(*detachInput.AutoScalingGroupName).To(Equal(asgName))
+					Expect(*detachInput.ShouldDecrementDesiredCapacity).To(BeTrue())
+				})
+
+				g.It("should return an error", func() {
+					Expect(err).To(MatchError("could not detach instance from autoscaling group: bacon"))
+				})
+			})
+
+			g.Describe("when the detach call succeeds", func() {
+				var terminateCall *mock.Call
+				var terminateInput *ec2.TerminateInstancesInput
+
+				g.BeforeEach(func() {
+					detachCall.Return(nil, nil)
+
+					terminateInput = nil
+
+					terminateCall = mockEC2.On(
+						"TerminateInstances",
+						mock.Anything,
+						mock.MatchedBy(func(in *ec2.TerminateInstancesInput) bool {
+							terminateInput = in
+							return true
+						}),
+						mock.Anything,
+					)
+				})
+
+				g.Describe("when the terminate call fails", func() {
+					g.BeforeEach(func() { terminateCall.Return(nil, errors.New("bacon")) })
+
+					g.It("send the correct input", func() {
+						Expect(terminateInput).NotTo(BeNil())
+						Expect(terminateInput.InstanceIds).To(ConsistOf(instanceID))
+					})
+
+					g.It("should return an error", func() {
+						Expect(err).To(MatchError("could not terminate detached instance: bacon"))
+					})
+				})
+
+				g.Describe("when the terminate call succeeds", func() {
+					g.BeforeEach(func() { terminateCall.Return(nil, nil) })
+
+					g.It("succeeds", func() { Expect(err).NotTo(HaveOccurred()) })
+				})
+			})
+		})
 	})
 }
