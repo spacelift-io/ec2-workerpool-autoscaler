@@ -479,5 +479,48 @@ func TestController(t *testing.T) {
 				})
 			})
 		})
+
+		g.Describe("ScaleUpASG", func() {
+			const desiredCapacity = 42
+
+			var setCapacityCall *mock.Call
+			var setCapacityInput *autoscaling.SetDesiredCapacityInput
+
+			g.BeforeEach(func() {
+				setCapacityInput = nil
+
+				setCapacityCall = mockAutoscaling.On(
+					"SetDesiredCapacity",
+					mock.Anything,
+					mock.MatchedBy(func(in *autoscaling.SetDesiredCapacityInput) bool {
+						setCapacityInput = in
+						return true
+					}),
+					mock.Anything,
+				)
+			})
+
+			g.JustBeforeEach(func() { err = sut.ScaleUpASG(ctx, desiredCapacity) })
+
+			g.Describe("when the set capacity call fails", func() {
+				g.BeforeEach(func() { setCapacityCall.Return(nil, errors.New("bacon")) })
+
+				g.It("send the correct input", func() {
+					Expect(setCapacityInput).NotTo(BeNil())
+					Expect(*setCapacityInput.AutoScalingGroupName).To(Equal(asgName))
+					Expect(*setCapacityInput.DesiredCapacity).To(BeEquivalentTo(desiredCapacity))
+				})
+
+				g.It("should return an error", func() {
+					Expect(err).To(MatchError("could not set desired capacity: bacon"))
+				})
+			})
+
+			g.Describe("when the set capacity call succeeds", func() {
+				g.BeforeEach(func() { setCapacityCall.Return(nil, nil) })
+
+				g.It("succeeds", func() { Expect(err).NotTo(HaveOccurred()) })
+			})
+		})
 	})
 }

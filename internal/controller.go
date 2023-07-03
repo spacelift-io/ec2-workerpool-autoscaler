@@ -244,7 +244,8 @@ func (c *Controller) ScaleUpASG(ctx context.Context, desiredCapacity int32) (err
 		})
 
 		if err != nil {
-			return fmt.Errorf("could not set desired capacity: %v", err)
+			err = fmt.Errorf("could not set desired capacity: %v", err)
+			return err
 		}
 
 		return nil
