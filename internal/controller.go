@@ -140,11 +140,13 @@ func (c *Controller) GetWorkerPool(ctx context.Context) (out *WorkerPool, err er
 		var wpDetails WorkerPoolDetails
 
 		if err = c.Spacelift.Query(ctx, &wpDetails, map[string]any{"workerPool": c.SpaceliftWorkerPoolID}); err != nil {
-			return fmt.Errorf("could not get Spacelift worker pool details: %w", err)
+			err = fmt.Errorf("could not get Spacelift worker pool details: %w", err)
+			return err
 		}
 
 		if wpDetails.Pool == nil {
-			return errors.New("worker pool not found or not accessible")
+			err = errors.New("worker pool not found or not accessible")
+			return err
 		}
 
 		// Let's sort the workers by their creation time. This is important

@@ -208,5 +208,82 @@ func TestController(t *testing.T) {
 				})
 			})
 		})
+
+		g.Describe("GetWorkerPool", func() {
+			var spaceliftCall *mock.Call
+			var params map[string]any
+			var workerPool *internal.WorkerPool
+
+			g.BeforeEach(func() {
+				params = nil
+				workerPool = nil
+
+				spaceliftCall = mockSpacelift.On(
+					"Query",
+					mock.Anything,
+					mock.Anything,
+					mock.MatchedBy(func(in any) bool {
+						params = in.(map[string]any)
+						return true
+					}),
+					mock.Anything,
+				)
+			})
+
+			g.JustBeforeEach(func() { workerPool, err = sut.GetWorkerPool(ctx) })
+
+			g.Describe("when the API call fails", func() {
+				g.BeforeEach(func() { spaceliftCall.Return(errors.New("bacon")) })
+
+				g.It("sends the correct input", func() {
+					Expect(params).NotTo(BeNil())
+					Expect(params["workerPool"]).To(Equal(workerPoolID))
+				})
+
+				g.It("should return an error", func() {
+					Expect(workerPool).To(BeNil())
+					Expect(err).To(MatchError("could not get Spacelift worker pool details: bacon"))
+				})
+			})
+
+			g.Describe("when the API call succeeds", func() {
+				var returnedPool *internal.WorkerPool
+
+				g.BeforeEach(func() {
+					returnedPool = nil
+
+					spaceliftCall.Run(func(args mock.Arguments) {
+						details := args.Get(1).(*internal.WorkerPoolDetails)
+						details.Pool = returnedPool
+					}).Return(nil)
+				})
+
+				g.Describe("when the worker pool is not found (default)", func() {
+					g.It("should return an error", func() {
+						Expect(workerPool).To(BeNil())
+						Expect(err).To(MatchError("worker pool not found or not accessible"))
+					})
+				})
+
+				g.Describe("when the worker pool is found", func() {
+					g.BeforeEach(func() {
+						returnedPool = &internal.WorkerPool{
+							Workers: []internal.Worker{
+								{ID: "newer", CreatedAt: 5},
+								{ID: "older", CreatedAt: 1},
+							},
+						}
+					})
+
+					g.It("should return the worker pool with sorted workers", func() {
+						Expect(err).NotTo(HaveOccurred())
+						Expect(workerPool).NotTo(BeNil())
+						Expect(workerPool.Workers).To(HaveLen(2))
+						Expect(workerPool.Workers[0].ID).To(Equal("older"))
+						Expect(workerPool.Workers[1].ID).To(Equal("newer"))
+					})
+				})
+			})
+		})
 	})
 }
