@@ -285,5 +285,121 @@ func TestController(t *testing.T) {
 				})
 			})
 		})
+
+		g.Describe("DrainWorker", func() {
+			const workerID = "test-worker"
+
+			var drained bool
+			var drainCall *mock.Call
+			var drainParams map[string]any
+
+			g.BeforeEach(func() {
+				drained = false
+				drainParams = nil
+
+				drainCall = mockSpacelift.On(
+					"Mutate",
+					mock.Anything,
+					mock.Anything,
+					mock.MatchedBy(func(in any) bool {
+						if params := in.(map[string]any); params["drain"].(bool) {
+							drainParams = params
+							return true
+						}
+						return false
+					}),
+					mock.Anything,
+				)
+			})
+
+			g.JustBeforeEach(func() { drained, err = sut.DrainWorker(ctx, workerID) })
+
+			g.Describe("when the drain call fails", func() {
+				g.BeforeEach(func() { drainCall.Return(errors.New("bacon")) })
+
+				g.It("send the correct input", func() {
+					Expect(drainParams).NotTo(BeNil())
+					Expect(drainParams["workerPoolId"]).To(Equal(workerPoolID))
+					Expect(drainParams["id"]).To(Equal(workerID))
+					Expect(drainParams["drain"]).To(BeTrue())
+				})
+
+				g.It("should return an error", func() {
+					Expect(drained).To(BeFalse())
+					Expect(err).To(MatchError("could not drain worker: could not set worker drain to true: bacon"))
+				})
+			})
+
+			g.Describe("when the API call succeeds", func() {
+				var worker *internal.Worker
+
+				g.BeforeEach(func() {
+					worker = nil
+
+					drainCall.Run(func(args mock.Arguments) {
+						args.Get(1).(*internal.WorkerDrainSet).Worker = *worker
+					}).Return(nil)
+				})
+
+				g.Describe("when the worker is not busy", func() {
+					g.BeforeEach(func() { worker = &internal.Worker{Busy: false} })
+
+					g.It("succeeds and reports the worker as drained", func() {
+						Expect(drained).To(BeTrue())
+						Expect(err).NotTo(HaveOccurred())
+					})
+				})
+
+				g.Describe("when the worker is busy", func() {
+					var undrainCall *mock.Call
+					var undrainParams map[string]any
+
+					g.BeforeEach(func() {
+						worker = &internal.Worker{Busy: true}
+
+						undrainParams = nil
+
+						undrainCall = mockSpacelift.On(
+							"Mutate",
+							mock.Anything,
+							mock.Anything,
+							mock.MatchedBy(func(in any) bool {
+								if params := in.(map[string]any); !params["drain"].(bool) {
+									undrainParams = params
+									return true
+								}
+								return false
+							}),
+							mock.Anything,
+						)
+					})
+
+					g.Describe("when the undrain call fails", func() {
+						g.BeforeEach(func() { undrainCall.Return(errors.New("bacon")) })
+
+						g.It("send the correct input", func() {
+							Expect(undrainParams).NotTo(BeNil())
+							Expect(undrainParams["workerPoolId"]).To(Equal(workerPoolID))
+							Expect(undrainParams["id"]).To(Equal(workerID))
+							Expect(undrainParams["drain"]).To(BeFalse())
+						})
+
+						g.It("should return an error", func() {
+							Expect(drained).To(BeFalse())
+							Expect(err).To(MatchError("could not undrain a busy worker: could not set worker drain to false: bacon"))
+						})
+					})
+
+					g.Describe("when the undrain call succeeds", func() {
+						g.BeforeEach(func() { undrainCall.Return(nil) })
+
+						g.It("succeeds but reports the worker as not drained", func() {
+							Expect(drained).To(BeFalse())
+							Expect(err).NotTo(HaveOccurred())
+						})
+					})
+				})
+			})
+		})
 	})
 }

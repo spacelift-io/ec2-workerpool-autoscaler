@@ -178,7 +178,8 @@ func (c *Controller) DrainWorker(ctx context.Context, workerID string) (drained 
 		var worker *Worker
 
 		if worker, err = c.workerDrainSet(ctx, workerID, true); err != nil {
-			return fmt.Errorf("could not drain worker: %w", err)
+			err = fmt.Errorf("could not drain worker: %w", err)
+			return err
 		}
 
 		xray.AddMetadata(ctx, "worker_id", worker.ID)
@@ -192,7 +193,8 @@ func (c *Controller) DrainWorker(ctx context.Context, workerID string) (drained 
 		}
 
 		if _, err = c.workerDrainSet(ctx, workerID, false); err != nil {
-			return fmt.Errorf("could not undrain worker: %w", err)
+			err = fmt.Errorf("could not undrain a busy worker: %w", err)
+			return err
 		}
 
 		return nil
@@ -259,8 +261,8 @@ func (c *Controller) workerDrainSet(ctx context.Context, workerID string, drain 
 			"drain":        drain,
 		}
 
-		if err = c.Spacelift.Mutate(ctx, mutation, variables); err != nil {
-			err = fmt.Errorf("could not drain worker: %w", err)
+		if err = c.Spacelift.Mutate(ctx, &mutation, variables); err != nil {
+			err = fmt.Errorf("could not set worker drain to %t: %w", drain, err)
 			return err
 		}
 
