@@ -14,8 +14,8 @@ import (
 	. "github.com/onsi/gomega"
 	"github.com/stretchr/testify/mock"
 
-	"gh.com/mw/autoscalr/internal"
-	"gh.com/mw/autoscalr/internal/ifaces"
+	"github.com/spacelift-io/awsautoscalr/internal"
+	"github.com/spacelift-io/awsautoscalr/internal/ifaces"
 )
 
 func TestController(t *testing.T) {

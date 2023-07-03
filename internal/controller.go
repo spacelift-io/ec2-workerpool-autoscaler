@@ -17,7 +17,7 @@ import (
 	spacelift "github.com/spacelift-io/spacectl/client"
 	"github.com/spacelift-io/spacectl/client/session"
 
-	"gh.com/mw/autoscalr/internal/ifaces"
+	"github.com/spacelift-io/awsautoscalr/internal/ifaces"
 )
 
 // Controller is responsible for handling interactions with external systems

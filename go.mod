@@ -1,4 +1,4 @@
-module gh.com/mw/autoscalr
+module github.com/spacelift-io/awsautoscalr
 
 go 1.20
 

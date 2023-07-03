@@ -8,7 +8,7 @@ import (
 	"github.com/franela/goblin"
 	. "github.com/onsi/gomega"
 
-	"gh.com/mw/autoscalr/internal"
+	"github.com/spacelift-io/awsautoscalr/internal"
 )
 
 func TestState(t *testing.T) {
@@ -186,7 +186,7 @@ func TestState(t *testing.T) {
 			})
 		})
 
-		g.Describe("Decision", func() {
+		g.Describe("Decide", func() {
 			var maxCreate, maxKill int
 
 			var decision internal.Decision
@@ -208,7 +208,7 @@ func TestState(t *testing.T) {
 			})
 
 			g.JustBeforeEach(func() {
-				decision = sut.Decision(maxCreate, maxKill)
+				decision = sut.Decide(maxCreate, maxKill)
 			})
 
 			g.Describe("when there are no workers", func() {

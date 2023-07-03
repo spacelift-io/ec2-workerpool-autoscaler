@@ -6,7 +6,7 @@ import (
 	"github.com/franela/goblin"
 	. "github.com/onsi/gomega"
 
-	"gh.com/mw/autoscalr/internal"
+	"github.com/spacelift-io/awsautoscalr/internal"
 )
 
 func TestWorker(t *testing.T) {

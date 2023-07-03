@@ -95,7 +95,7 @@ func (s *State) StrayInstances() (out []string) {
 	return
 }
 
-func (s *State) Decision(maxCreate, maxKill int) Decision {
+func (s *State) Decide(maxCreate, maxKill int) Decision {
 	if len(s.WorkerPool.Workers) != len(s.ASG.Instances) {
 		return Decision{
 			ScalingDirection: ScalingDirectionNone,
