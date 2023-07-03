@@ -21,6 +21,23 @@ func NewState(workerPool *WorkerPool, asg *types.AutoScalingGroup) (*State, erro
 	workersByInstanceID := make(map[InstanceID]*Worker)
 	inServiceInstanceIDs := make(map[InstanceID]struct{})
 
+	// Validate the ASG.
+	if asg.AutoScalingGroupName == nil {
+		return nil, fmt.Errorf("ASG name is not set")
+	}
+
+	if asg.MinSize == nil {
+		return nil, fmt.Errorf("ASG minimum size is not set")
+	}
+
+	if asg.MaxSize == nil {
+		return nil, fmt.Errorf("ASG maximum size is not set")
+	}
+
+	if asg.DesiredCapacity == nil {
+		return nil, fmt.Errorf("ASG desired capacity is not set")
+	}
+
 	for _, worker := range workerPool.Workers {
 		groupID, instanceID, err := worker.InstanceIdentity()
 
@@ -67,8 +84,7 @@ func (s *State) IdleWorkers() []Worker {
 }
 
 // StrayInstances returns a list of instance IDs that don't have a corresponding
-// worker in the worker pool. Depending on how long the machine has been up it
-// may
+// worker in the worker pool.
 func (s *State) StrayInstances() (out []string) {
 	for instanceID := range s.inServiceInstanceIDs {
 		if _, ok := s.workersByInstanceID[instanceID]; !ok {
