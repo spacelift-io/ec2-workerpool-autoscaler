@@ -1,8 +1,8 @@
-package main
+package internal
 
 import (
 	"context"
-	"os"
+	"fmt"
 	"time"
 
 	"github.com/aws/aws-xray-sdk-go/xray"
@@ -12,12 +12,10 @@ import (
 	"github.com/spacelift-io/awsautoscalr/internal"
 )
 
-func main() {
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
-
+func Handle(ctx context.Context, logger *slog.Logger) error {
 	var cfg internal.RuntimeConfig
 	if err := env.Parse(&cfg); err != nil {
-		logger.Error("could not parse environment variables: %v", err)
+		return fmt.Errorf("could not parse environment variables: %w", err)
 	}
 
 	logger = logger.With(
@@ -26,34 +24,27 @@ func main() {
 	)
 
 	if err := xray.Configure(xray.Config{ServiceVersion: "1.2.3"}); err != nil {
-		logger.Error("could not configure X-Ray: %v", err)
-		os.Exit(1)
+		return fmt.Errorf("could not configure X-Ray: %w", err)
 	}
-
-	ctx := context.Background()
 
 	controller, err := internal.NewController(ctx, &cfg)
 	if err != nil {
-		logger.Error("could not create controller: %v", err)
-		os.Exit(1)
+		return fmt.Errorf("could not create controller: %w", err)
 	}
 
 	workerPool, err := controller.GetWorkerPool(ctx)
 	if err != nil {
-		logger.Error("could not get worker pool: %v", err)
-		os.Exit(1)
+		return fmt.Errorf("could not get worker pool: %w", err)
 	}
 
 	asg, err := controller.GetAutoscalingGroup(ctx)
 	if err != nil {
-		logger.Error("could not get autoscaling group: %v", err)
-		os.Exit(1)
+		return fmt.Errorf("could not get autoscaling group: %w", err)
 	}
 
 	state, err := internal.NewState(workerPool, asg)
 	if err != nil {
-		logger.Error("could not create state: %v", err)
-		os.Exit(1)
+		return fmt.Errorf("could not create state: %w", err)
 	}
 
 	// Let's make sure that for each of the in-service instances we have a
@@ -63,8 +54,7 @@ func main() {
 		// decision will be made based on the creation timestamp.
 		instances, err := controller.DescribeInstances(ctx, strayInstances)
 		if err != nil {
-			logger.Error("could not list EC2 instances: %v", err)
-			os.Exit(1)
+			return fmt.Errorf("could not list EC2 instances: %w", err)
 		}
 
 		for _, instance := range instances {
@@ -84,14 +74,14 @@ func main() {
 				logger.Warn("instance has no corresponding worker in Spacelift, removing from the ASG")
 
 				if err := controller.KillInstance(ctx, *instance.InstanceId); err != nil {
-					logger.Error("could not kill instance: %v", err)
-					os.Exit(1)
+					return fmt.Errorf("could not kill instance: %w", err)
 				}
 
 				// We don't want to kill too many instances at once, so let's
 				// return after the first successfully killed one.
 				logger.Info("instance successfully removed from the ASG and terminated", *instance.InstanceId)
-				return
+
+				return nil
 			}
 		}
 	}
@@ -100,18 +90,17 @@ func main() {
 
 	if decision.ScalingDirection == internal.ScalingDirectionNone {
 		logger.Info("no scaling decision to be made")
-		return
+		return nil
 	}
 
 	if decision.ScalingDirection == internal.ScalingDirectionUp {
 		logger.Info("scaling up ASG by %d instances", decision.ScalingSize)
 
 		if err := controller.ScaleUpASG(ctx, *asg.DesiredCapacity+int32(decision.ScalingSize)); err != nil {
-			logger.Error("could not scale up ASG: %v", err)
-			os.Exit(1)
+			return fmt.Errorf("could not scale up ASG: %w", err)
 		}
 
-		return
+		return nil
 	}
 
 	// If we got this far, we're scaling down.
@@ -132,17 +121,18 @@ func main() {
 
 		drained, err := controller.DrainWorker(ctx, worker.ID)
 		if err != nil {
-			logger.Error("could not drain worker: %v", err)
-			os.Exit(1)
+			return fmt.Errorf("could not drain worker: %w", err)
 		}
 
 		if !drained {
 			logger.Warn("worker was busy, stopping the scaling down process")
+			return nil
 		}
 
 		if err := controller.KillInstance(ctx, string(instanceID)); err != nil {
-			logger.Error("could not kill instance: %v", err)
-			os.Exit(1)
+			return fmt.Errorf("could not kill instance: %w", err)
 		}
 	}
+
+	return nil
 }
