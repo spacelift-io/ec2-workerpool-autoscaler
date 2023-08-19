@@ -12,6 +12,7 @@ import (
 	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/franela/goblin"
 	. "github.com/onsi/gomega"
+	"github.com/shurcooL/graphql"
 	"github.com/stretchr/testify/mock"
 
 	"github.com/spacelift-io/awsautoscalr/internal"
@@ -302,7 +303,7 @@ func TestController(t *testing.T) {
 					mock.Anything,
 					mock.Anything,
 					mock.MatchedBy(func(in any) bool {
-						if params := in.(map[string]any); params["drain"].(bool) {
+						if params := in.(map[string]any); params["drain"].(graphql.Boolean) {
 							drainParams = params
 							return true
 						}
@@ -320,8 +321,8 @@ func TestController(t *testing.T) {
 				g.It("send the correct input", func() {
 					Expect(drainParams).NotTo(BeNil())
 					Expect(drainParams["workerPoolId"]).To(Equal(workerPoolID))
-					Expect(drainParams["id"]).To(Equal(workerID))
-					Expect(drainParams["drain"]).To(BeTrue())
+					Expect(drainParams["workerId"]).To(Equal(workerID))
+					Expect(bool(drainParams["drain"].(graphql.Boolean))).To(BeTrue())
 				})
 
 				g.It("should return an error", func() {
@@ -364,7 +365,7 @@ func TestController(t *testing.T) {
 							mock.Anything,
 							mock.Anything,
 							mock.MatchedBy(func(in any) bool {
-								if params := in.(map[string]any); !params["drain"].(bool) {
+								if params := in.(map[string]any); !params["drain"].(graphql.Boolean) {
 									undrainParams = params
 									return true
 								}
@@ -380,8 +381,8 @@ func TestController(t *testing.T) {
 						g.It("send the correct input", func() {
 							Expect(undrainParams).NotTo(BeNil())
 							Expect(undrainParams["workerPoolId"]).To(Equal(workerPoolID))
-							Expect(undrainParams["id"]).To(Equal(workerID))
-							Expect(undrainParams["drain"]).To(BeFalse())
+							Expect(undrainParams["workerId"]).To(Equal(workerID))
+							Expect(bool(undrainParams["drain"].(graphql.Boolean))).To(BeFalse())
 						})
 
 						g.It("should return an error", func() {

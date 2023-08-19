@@ -1,0 +1,20 @@
+builds:
+  - main: ./cmd/lambda
+    env:
+      - CGO_ENABLED=0
+      - GOPRIVATE="github.com/spacelift-io"
+    mod_timestamp: '{{ .CommitTimestamp }}'
+    flags: [-trimpath, -v]
+    goos: [linux]
+    goarch: [amd64, arm64]
+    binary: '{{ .ProjectName }}_v{{ .Version }}'
+
+archives:
+  - format: zip
+    name_template: '{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}'
+
+changelog:
+  use: github-native
+
+release:
+  draft: true

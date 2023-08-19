@@ -5,8 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/aws/aws-xray-sdk-go/xray"
-	"github.com/caarlos0/env"
+	"github.com/caarlos0/env/v9"
 	"golang.org/x/exp/slog"
 
 	"github.com/spacelift-io/awsautoscalr/internal"
@@ -19,13 +18,9 @@ func Handle(ctx context.Context, logger *slog.Logger) error {
 	}
 
 	logger = logger.With(
-		"asg_id", cfg.AutoscalingGroupName,
+		"asg_arn", cfg.AutoscalingGroupARN,
 		"worker_pool_id", cfg.SpaceliftWorkerPoolID,
 	)
-
-	if err := xray.Configure(xray.Config{ServiceVersion: "1.2.3"}); err != nil {
-		return fmt.Errorf("could not configure X-Ray: %w", err)
-	}
 
 	controller, err := internal.NewController(ctx, &cfg)
 	if err != nil {
@@ -79,7 +74,7 @@ func Handle(ctx context.Context, logger *slog.Logger) error {
 
 				// We don't want to kill too many instances at once, so let's
 				// return after the first successfully killed one.
-				logger.Info("instance successfully removed from the ASG and terminated", *instance.InstanceId)
+				logger.Info("instance successfully removed from the ASG and terminated")
 
 				return nil
 			}
@@ -94,7 +89,7 @@ func Handle(ctx context.Context, logger *slog.Logger) error {
 	}
 
 	if decision.ScalingDirection == internal.ScalingDirectionUp {
-		logger.Info("scaling up ASG by %d instances", decision.ScalingSize)
+		logger.With("instances", decision.ScalingSize).Info("scaling up the ASG")
 
 		if err := controller.ScaleUpASG(ctx, *asg.DesiredCapacity+int32(decision.ScalingSize)); err != nil {
 			return fmt.Errorf("could not scale up ASG: %w", err)
@@ -104,7 +99,7 @@ func Handle(ctx context.Context, logger *slog.Logger) error {
 	}
 
 	// If we got this far, we're scaling down.
-	logger.Info("scaling down ASG by %d instances", decision.ScalingSize)
+	logger.With("instances", decision.ScalingSize).Info("scaling down ASG")
 
 	idleWorkers := state.IdleWorkers()
 
