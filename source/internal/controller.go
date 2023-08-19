@@ -5,15 +5,18 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/autoscaling"
 	autoscalingtypes "github.com/aws/aws-sdk-go-v2/service/autoscaling/types"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
+	"github.com/aws/aws-sdk-go-v2/service/ssm"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-xray-sdk-go/instrumentation/awsv2"
 	"github.com/aws/aws-xray-sdk-go/xray"
+	"github.com/shurcooL/graphql"
 	spacelift "github.com/spacelift-io/spacectl/client"
 	"github.com/spacelift-io/spacectl/client/session"
 
@@ -43,23 +46,53 @@ func NewController(ctx context.Context, cfg *RuntimeConfig) (*Controller, error)
 
 	awsv2.AWSV2Instrumentor(&awsConfig.APIOptions)
 
+	ssmClient := ssm.NewFromConfig(awsConfig)
+	var output *ssm.GetParameterOutput
+
+	xray.Capture(ctx, "aws.ssm.secret", func(ctx context.Context) error {
+		output, err = ssmClient.GetParameter(ctx, &ssm.GetParameterInput{
+			Name:           aws.String(cfg.SpaceliftAPISecretName),
+			WithDecryption: aws.Bool(true),
+		})
+
+		return err
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("could not get Spacelift API key secret from SSM: %w", err)
+	} else if output.Parameter == nil {
+		return nil, errors.New("could not find Spacelift API key secret in SSM")
+	} else if output.Parameter.Value == nil {
+		return nil, errors.New("could not find Spacelift API key secret value in SSM")
+	}
+
+	var slSession session.Session
 	httpClient := xray.Client(nil)
 
-	slSession, err := session.FromAPIKey(ctx, httpClient)(
-		cfg.SpaceliftAPIEndpoint,
-		cfg.SpaceliftAPIKeyID,
-		cfg.SpaceliftAPISecret,
-	)
+	xray.Capture(ctx, "spacelift.session.get", func(ctx context.Context) error {
+		slSession, err = session.FromAPIKey(ctx, httpClient)(
+			cfg.SpaceliftAPIEndpoint,
+			cfg.SpaceliftAPIKeyID,
+			*output.Parameter.Value,
+		)
+
+		return err
+	})
 
 	if err != nil {
 		return nil, fmt.Errorf("could not create Spacelift session: %w", err)
+	}
+
+	arnParts := strings.Split(cfg.AutoscalingGroupARN, "/")
+	if len(arnParts) != 2 {
+		return nil, fmt.Errorf("could not parse autoscaling group ARN")
 	}
 
 	return &Controller{
 		Autoscaling:             autoscaling.NewFromConfig(awsConfig),
 		EC2:                     ec2.NewFromConfig(awsConfig),
 		Spacelift:               spacelift.New(httpClient, slSession),
-		AWSAutoscalingGroupName: cfg.AutoscalingGroupName,
+		AWSAutoscalingGroupName: arnParts[1],
 		SpaceliftWorkerPoolID:   cfg.SpaceliftWorkerPoolID,
 	}, nil
 }
@@ -259,9 +292,9 @@ func (c *Controller) workerDrainSet(ctx context.Context, workerID string, drain 
 		var mutation WorkerDrainSet
 
 		variables := map[string]any{
-			"workerPoolId": c.SpaceliftWorkerPoolID,
-			"id":           workerID,
-			"drain":        drain,
+			"workerPoolId": graphql.ID(c.SpaceliftWorkerPoolID),
+			"workerId":     graphql.ID(workerID),
+			"drain":        graphql.Boolean(drain),
 		}
 
 		if err = c.Spacelift.Mutate(ctx, &mutation, variables); err != nil {
