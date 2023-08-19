@@ -1,0 +1,45 @@
+name: Test
+
+on: [push]
+
+jobs:
+  deployment:
+    name: Test the code
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      
+      - name: Install Go
+        uses: actions/setup-go@v2
+        with:
+          go-version: "1.20"
+
+      - name: Check formatting using gofmt
+        run: gofmt -s -l -d .
+
+      - name: Get dependencies
+        run: go mod download
+
+      - name: Test with coverage
+        run: go test ./...
+
+  release:
+    name: Test the release process
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Install Go
+        uses: actions/setup-go@v2
+        with:
+          go-version: "1.20"
+
+      - name: Run GoReleaser to create a snapshot release
+        uses: goreleaser/goreleaser-action@v2
+        with:
+          version: latest
+          args: --skip-publish --snapshot
