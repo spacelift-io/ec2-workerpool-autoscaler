@@ -8,6 +8,12 @@ variable "autoscaler_version" {
   description = "Version of the autoscaler to deploy"
 }
 
+variable "autoscaling_frequency" {
+  type        = number
+  description = "How often to run the autoscaler, in minutes"
+  default     = 5
+}
+
 variable "spacelift_api_key_id" {
   type        = string
   description = "ID of the Spacelift API key to use"
