@@ -19,6 +19,8 @@ resource "aws_lambda_function" "autoscaler" {
   environment {
     variables = {
       AUTOSCALING_GROUP_ARN         = var.autoscaling_group_arn
+      AUTOSCALING_MAX_CREATE        = var.autoscaling_max_create
+      AUTOSCALING_MAX_KILL          = var.autoscaling_max_kill
       AUTOSCALING_REGION            = data.aws_region.current.name
       SPACELIFT_API_KEY_ID          = var.spacelift_api_key_id
       SPACELIFT_API_KEY_SECRET_NAME = aws_ssm_parameter.spacelift_api_key_secret.name
