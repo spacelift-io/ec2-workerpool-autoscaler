@@ -7,7 +7,7 @@ builds:
     flags: [-trimpath, -v]
     goos: [linux]
     goarch: [amd64, arm64]
-    binary: bootsrap
+    binary: bootstrap
 
 archives:
   - format: zip
