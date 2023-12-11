@@ -246,12 +246,21 @@ func (c *Controller) KillInstance(ctx context.Context, instanceID string) (err e
 			ShouldDecrementDesiredCapacity: aws.Bool(true),
 		})
 
-		if err != nil {
+		// A special instance of the error is when the instance is not part of
+		// the autoscaling group. This can happen when the instance successfully
+		// detached but for some reason the termination request failed.
+		//
+		// This will fix one-off errors and machines manually connected to the
+		// worker pool (as long as they terminate upon request), but if there
+		// are multiple ASGs connected to the same worker pool, this will be a
+		// common occurrence and will break the entire autoscaling logic.
+		if err != nil && !strings.Contains(err.Error(), "is not part of Auto Scaling group") {
 			err = fmt.Errorf("could not detach instance from autoscaling group: %v", err)
 			return err
 		}
 
-		// Now that the instance is detached from the ASG, we can terminate it.
+		// Now that the instance is detached from the ASG (or was never part of
+		// the ASG), we can terminate it.
 		_, err = c.EC2.TerminateInstances(ctx, &ec2.TerminateInstancesInput{
 			InstanceIds: []string{instanceID},
 		})

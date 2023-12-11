@@ -440,13 +440,11 @@ func TestController(t *testing.T) {
 				})
 			})
 
-			g.Describe("when the detach call succeeds", func() {
+			g.Describe("when the detach call does not fail", func() {
 				var terminateCall *mock.Call
 				var terminateInput *ec2.TerminateInstancesInput
 
 				g.BeforeEach(func() {
-					detachCall.Return(nil, nil)
-
 					terminateInput = nil
 
 					terminateCall = mockEC2.On(
@@ -460,12 +458,10 @@ func TestController(t *testing.T) {
 					)
 				})
 
-				g.Describe("when the terminate call fails", func() {
-					g.BeforeEach(func() { terminateCall.Return(nil, errors.New("bacon")) })
-
-					g.It("send the correct input", func() {
-						Expect(terminateInput).NotTo(BeNil())
-						Expect(terminateInput.InstanceIds).To(ConsistOf(instanceID))
+				g.Describe("when the instance is not part of the ASG", func() {
+					g.BeforeEach(func() {
+						detachCall.Return(nil, errors.New("instance is not part of Auto Scaling group"))
+						terminateCall.Return(nil, errors.New("bacon"))
 					})
 
 					g.It("should return an error", func() {
@@ -473,10 +469,27 @@ func TestController(t *testing.T) {
 					})
 				})
 
-				g.Describe("when the terminate call succeeds", func() {
-					g.BeforeEach(func() { terminateCall.Return(nil, nil) })
+				g.Describe("when the detach call succeeds", func() {
+					g.BeforeEach(func() { detachCall.Return(nil, nil) })
 
-					g.It("succeeds", func() { Expect(err).NotTo(HaveOccurred()) })
+					g.Describe("when the terminate call fails", func() {
+						g.BeforeEach(func() { terminateCall.Return(nil, errors.New("bacon")) })
+
+						g.It("send the correct input", func() {
+							Expect(terminateInput).NotTo(BeNil())
+							Expect(terminateInput.InstanceIds).To(ConsistOf(instanceID))
+						})
+
+						g.It("should return an error", func() {
+							Expect(err).To(MatchError("could not terminate detached instance: bacon"))
+						})
+					})
+
+					g.Describe("when the terminate call succeeds", func() {
+						g.BeforeEach(func() { terminateCall.Return(nil, nil) })
+
+						g.It("succeeds", func() { Expect(err).NotTo(HaveOccurred()) })
+					})
 				})
 			})
 		})
