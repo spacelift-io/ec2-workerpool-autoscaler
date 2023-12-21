@@ -14,6 +14,18 @@ variable "autoscaling_frequency" {
   default     = 5
 }
 
+variable "autoscaling_max_create" {
+  type        = number
+  description = "Max number of instances to create during a single execution of the autoscaler"
+  default     = 1
+}
+
+variable "autoscaling_max_kill" {
+  type        = number
+  description = "Max number of instances to kill during a single execution of the autoscaler"
+  default     = 1
+}
+
 variable "spacelift_api_key_id" {
   type        = string
   description = "ID of the Spacelift API key to use"
