@@ -79,3 +79,8 @@ variable "base_name" {
   nullable    = true
   default     = null
 }
+
+variable "region" {
+  type = string
+  description = "AWS Region where the provider will operate"
+}
