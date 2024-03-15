@@ -1,5 +1,5 @@
 data "aws_iam_policy_document" "autoscaler" {
-  count = var.enable_autoscaling ? 1 : 0
+  # count = var.enable_autoscaling ? 1 : 0
   # Allow the Lambda to write CloudWatch Logs.
   statement {
     effect = "Allow"
@@ -8,7 +8,7 @@ data "aws_iam_policy_document" "autoscaler" {
       "logs:PutLogEvents",
     ]
 
-    resources = ["${aws_cloudwatch_log_group.log_group[count.index].arn}:*"]
+    resources = ["${aws_cloudwatch_log_group.log_group.arn}:*"]
   }
 
   # Allow the Lambda to put X-Ray traces.
@@ -50,13 +50,13 @@ data "aws_iam_policy_document" "autoscaler" {
   statement {
     effect    = "Allow"
     actions   = ["ssm:GetParameter"]
-    resources = [aws_ssm_parameter.spacelift_api_key_secret[count.index].arn]
+    resources = [aws_ssm_parameter.spacelift_api_key_secret.arn]
   }
 }
 
 
 resource "aws_iam_role" "autoscaler" {
-  count = var.enable_autoscaling ? 1 : 0
+  # count = var.enable_autoscaling ? 1 : 0
   name  = local.function_name
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -73,6 +73,6 @@ resource "aws_iam_role" "autoscaler" {
 
   inline_policy {
     name   = "ec2-autoscaler-${var.worker_pool_id}"
-    policy = data.aws_iam_policy_document.autoscaler[count.index].json
+    policy = data.aws_iam_policy_document.autoscaler.json
   }
 }
