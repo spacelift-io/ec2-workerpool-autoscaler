@@ -81,9 +81,13 @@ variable "region" {
 
 variable "autoscaler_s3_package" {
   type = object({
-    bucket         = "jubran-s3-autoscaler-test"
-    key            = "autoscaler.zip"
+    bucket         = string
+    key            = string
     # object_version = optional(string)
   })
   description = "Configuration to retrieve autoscaler lambda package from s3 bucket"
+  default = {
+    bucket = "jubran-s3-autoscaler-test",
+    key = "autoscaler.zip"
+  }
 }
