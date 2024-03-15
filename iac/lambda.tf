@@ -1,6 +1,6 @@
 locals {
-  base_name     = var.base_name == null ? "sp5ft-${var.worker_pool_id}" : var.base_name
-  function_name = "${local.base_name}-ec2-autoscaler"
+  base_name      = var.base_name == null ? "sp5ft-${var.worker_pool_id}" : var.base_name
+  function_name  = "${local.base_name}-ec2-autoscaler"
   use_s3_package = var.autoscaler_s3_package != null
 }
 
@@ -31,8 +31,8 @@ resource "aws_lambda_function" "autoscaler" {
   filename         = !local.use_s3_package ? data.archive_file.binary.output_path : null
   source_code_hash = !local.use_s3_package ? data.archive_file.binary.output_base64sha256 : null
 
-  s3_bucket         = local.use_s3_package ? var.autoscaler_s3_package.bucket : null
-  s3_key            = local.use_s3_package ? var.autoscaler_s3_package.key : null
+  s3_bucket = local.use_s3_package ? var.autoscaler_s3_package.bucket : null
+  s3_key    = local.use_s3_package ? var.autoscaler_s3_package.key : null
   # s3_object_version = local.use_s3_package ? var.autoscaler_s3_package.object_version : null
 
   function_name = local.function_name
@@ -67,8 +67,8 @@ resource "aws_cloudwatch_event_rule" "scheduling" {
 }
 
 resource "aws_cloudwatch_event_target" "scheduling" {
-  rule  = aws_cloudwatch_event_rule.scheduling.name
-  arn   = aws_lambda_function.autoscaler.arn
+  rule = aws_cloudwatch_event_rule.scheduling.name
+  arn  = aws_lambda_function.autoscaler.arn
 }
 
 resource "aws_lambda_permission" "allow_cloudwatch_to_call_lambda" {

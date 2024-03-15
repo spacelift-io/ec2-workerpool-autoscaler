@@ -75,19 +75,15 @@ variable "base_name" {
 }
 
 variable "region" {
-  type = string
+  type        = string
   description = "AWS Region where the provider will operate"
 }
 
 variable "autoscaler_s3_package" {
   type = object({
-    bucket         = string
-    key            = string
+    bucket = string
+    key    = string
     # object_version = optional(string)
   })
   description = "Configuration to retrieve autoscaler lambda package from s3 bucket"
-  default = {
-    bucket = "jubran-s3-autoscaler-test",
-    key = "autoscaler.zip"
-  }
 }
