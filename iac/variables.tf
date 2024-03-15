@@ -37,12 +37,6 @@ variable "worker_pool_id" {
   description = "ID of the Spacelift worker pool to autoscale"
 }
 
-variable "enable_autoscaling" {
-  default     = true
-  description = "Determines whether to create the Lambda Autoscaler function and dependent resources or not"
-  type        = bool
-}
-
 variable "autoscaler_architecture" {
   type        = string
   description = "Instruction set architecture of the autoscaler to use"
@@ -83,4 +77,13 @@ variable "base_name" {
 variable "region" {
   type = string
   description = "AWS Region where the provider will operate"
+}
+
+variable "autoscaler_s3_package" {
+  type = object({
+    bucket         = "jubran-s3-autoscaler-test"
+    key            = "autoscaler.zip"
+    # object_version = optional(string)
+  })
+  description = "Configuration to retrieve autoscaler lambda package from s3 bucket"
 }
