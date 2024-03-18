@@ -83,7 +83,7 @@ variable "autoscaler_s3_package" {
   type = object({
     bucket = string
     key    = string
-    # object_version = optional(string)
+    object_version = optional(string)
   })
   description = "Configuration to retrieve autoscaler lambda package from s3 bucket"
 }

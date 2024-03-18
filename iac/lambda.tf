@@ -33,7 +33,7 @@ resource "aws_lambda_function" "autoscaler" {
 
   s3_bucket = local.use_s3_package ? var.autoscaler_s3_package.bucket : null
   s3_key    = local.use_s3_package ? var.autoscaler_s3_package.key : null
-  # s3_object_version = local.use_s3_package ? var.autoscaler_s3_package.object_version : null
+  s3_object_version = local.use_s3_package ? var.autoscaler_s3_package.object_version : null
 
   function_name = local.function_name
   role          = aws_iam_role.autoscaler.arn
