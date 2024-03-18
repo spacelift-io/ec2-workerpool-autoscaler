@@ -1,4 +1,4 @@
-data "aws_iam_policy_document" "lambda_policy" {
+data "aws_iam_policy_document" "autoscaler" {
   # Allow the Lambda to write CloudWatch Logs.
   statement {
     effect = "Allow"
@@ -7,7 +7,7 @@ data "aws_iam_policy_document" "lambda_policy" {
       "logs:PutLogEvents",
     ]
 
-    resources = ["${aws_cloudwatch_log_group.log_group.arn}/*"]
+    resources = ["${aws_cloudwatch_log_group.log_group.arn}:*"]
   }
 
   # Allow the Lambda to put X-Ray traces.
@@ -28,14 +28,9 @@ data "aws_iam_policy_document" "lambda_policy" {
     actions = [
       "autoscaling:DetachInstances",
       "autoscaling:SetDesiredCapacity",
+      "autoscaling:DescribeAutoScalingGroups",
     ]
 
-    resources = [var.autoscaling_group_arn]
-  }
-
-  statement {
-    effect    = "Allow"
-    actions   = ["autoscaling:DescribeAutoScalingGroups"]
     resources = ["*"]
   }
 
@@ -58,12 +53,24 @@ data "aws_iam_policy_document" "lambda_policy" {
   }
 }
 
-resource "aws_iam_role" "lambda" {
-  name               = "ec2-autoscaler-${var.worker_pool_id}"
-  assume_role_policy = data.aws_iam_policy_document.assume_lambda_role.json
+
+resource "aws_iam_role" "autoscaler" {
+  name = local.function_name
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        "Effect" : "Allow",
+        "Principal" : {
+          "Service" : "lambda.amazonaws.com"
+        },
+        "Action" : "sts:AssumeRole"
+      },
+    ]
+  })
 
   inline_policy {
     name   = "ec2-autoscaler-${var.worker_pool_id}"
-    policy = data.aws_iam_policy_document.lambda_policy.json
+    policy = data.aws_iam_policy_document.autoscaler.json
   }
 }

@@ -1,20 +1,46 @@
-data "external" "package" {
-  program = [
-    "${path.module}/download.sh",
-    local.code_version,
-    local.package_path,
-  ]
+locals {
+  base_name      = var.base_name == null ? "sp5ft-${var.worker_pool_id}" : var.base_name
+  function_name  = "${local.base_name}-ec2-autoscaler"
+  use_s3_package = var.autoscaler_s3_package != null
+}
+
+resource "aws_ssm_parameter" "spacelift_api_key_secret" {
+  name  = "/${local.function_name}/spacelift-api-secret-${var.worker_pool_id}"
+  type  = "SecureString"
+  value = var.spacelift_api_key_secret
+}
+
+resource "null_resource" "download" {
+  triggers = {
+    # Always re-download the archive file
+    now = timestamp()
+  }
+  provisioner "local-exec" {
+    command = "${path.module}/download.sh ${var.autoscaler_version} ${var.autoscaler_architecture}"
+  }
+}
+
+data "archive_file" "binary" {
+  type        = "zip"
+  source_file = "lambda/bootstrap"
+  output_path = "ec2-workerpool-autoscaler_${var.autoscaler_version}.zip"
+  depends_on  = [null_resource.download]
 }
 
 resource "aws_lambda_function" "autoscaler" {
-  filename         = local.package_path
-  source_code_hash = data.external.package.result.source_code_hash
-  function_name    = "ec2-autoscaler-${var.worker_pool_id}"
-  role             = aws_iam_role.lambda.arn
-  handler          = "ec2-workerpool-autoscaler_v${var.autoscaler_version}"
+  filename         = !local.use_s3_package ? data.archive_file.binary.output_path : null
+  source_code_hash = !local.use_s3_package ? data.archive_file.binary.output_base64sha256 : null
 
-  reserved_concurrent_executions = 1
-  runtime                        = "go1.x"
+  s3_bucket = local.use_s3_package ? var.autoscaler_s3_package.bucket : null
+  s3_key    = local.use_s3_package ? var.autoscaler_s3_package.key : null
+  s3_object_version = local.use_s3_package ? var.autoscaler_s3_package.object_version : null
+
+  function_name = local.function_name
+  role          = aws_iam_role.autoscaler.arn
+  handler       = "bootstrap"
+  runtime       = "provided.al2"
+  architectures = [var.autoscaler_architecture == "amd64" ? "x86_64" : var.autoscaler_architecture]
+  timeout       = var.autoscaling_timeout
 
   environment {
     variables = {
@@ -22,8 +48,10 @@ resource "aws_lambda_function" "autoscaler" {
       AUTOSCALING_REGION            = data.aws_region.current.name
       SPACELIFT_API_KEY_ID          = var.spacelift_api_key_id
       SPACELIFT_API_KEY_SECRET_NAME = aws_ssm_parameter.spacelift_api_key_secret.name
-      SPACELIFT_API_KEY_ENDPOINT    = var.spacelift_url
+      SPACELIFT_API_KEY_ENDPOINT    = var.spacelift_api_key_endpoint
       SPACELIFT_WORKER_POOL_ID      = var.worker_pool_id
+      AUTOSCALING_MAX_CREATE        = var.autoscaling_max_create
+      AUTOSCALING_MAX_KILL          = var.autoscaling_max_terminate
     }
   }
 
@@ -33,9 +61,9 @@ resource "aws_lambda_function" "autoscaler" {
 }
 
 resource "aws_cloudwatch_event_rule" "scheduling" {
-  name                = "spacelift-${var.worker_pool_id}-scheduling"
+  name                = local.function_name
   description         = "Spacelift autoscaler scheduling for worker pool ${var.worker_pool_id}"
-  schedule_expression = "rate(${var.autoscaling_frequency} minutes)"
+  schedule_expression = var.schedule_expression
 }
 
 resource "aws_cloudwatch_event_target" "scheduling" {
@@ -43,10 +71,15 @@ resource "aws_cloudwatch_event_target" "scheduling" {
   arn  = aws_lambda_function.autoscaler.arn
 }
 
-resource "aws_lambda_permission" "allow_cloudwatch_to_call_check_foo" {
+resource "aws_lambda_permission" "allow_cloudwatch_to_call_lambda" {
   statement_id  = "AllowExecutionFromCloudWatch"
   action        = "lambda:InvokeFunction"
   function_name = aws_lambda_function.autoscaler.function_name
   principal     = "events.amazonaws.com"
   source_arn    = aws_cloudwatch_event_rule.scheduling.arn
+}
+
+resource "aws_cloudwatch_log_group" "log_group" {
+  name              = "/aws/lambda/${local.function_name}"
+  retention_in_days = 7
 }
