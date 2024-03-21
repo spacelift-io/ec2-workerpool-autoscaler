@@ -43,9 +43,8 @@ resource "aws_lambda_function" "autoscaler" {
   timeout       = var.autoscaling_timeout
 
   vpc_config {
-    subnet_ids                  = null
-    security_group_ids          = null
-    ipv6_allowed_for_dual_stack = null
+    subnet_ids         = var.subnet_ids
+    security_group_ids = var.security_group_ids
   }
 
   environment {
