@@ -31,8 +31,8 @@ resource "aws_lambda_function" "autoscaler" {
   filename         = !local.use_s3_package ? data.archive_file.binary.output_path : null
   source_code_hash = !local.use_s3_package ? data.archive_file.binary.output_base64sha256 : null
 
-  s3_bucket = local.use_s3_package ? var.autoscaler_s3_package.bucket : null
-  s3_key    = local.use_s3_package ? var.autoscaler_s3_package.key : null
+  s3_bucket         = local.use_s3_package ? var.autoscaler_s3_package.bucket : null
+  s3_key            = local.use_s3_package ? var.autoscaler_s3_package.key : null
   s3_object_version = local.use_s3_package ? var.autoscaler_s3_package.object_version : null
 
   function_name = local.function_name
@@ -41,6 +41,11 @@ resource "aws_lambda_function" "autoscaler" {
   runtime       = "provided.al2"
   architectures = [var.autoscaler_architecture == "amd64" ? "x86_64" : var.autoscaler_architecture]
   timeout       = var.autoscaling_timeout
+
+  vpc_config {
+    subnet_ids         = var.subnet_ids
+    security_group_ids = var.security_group_ids
+  }
 
   environment {
     variables = {
