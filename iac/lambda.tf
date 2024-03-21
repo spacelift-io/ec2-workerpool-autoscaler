@@ -44,8 +44,9 @@ resource "aws_lambda_function" "autoscaler" {
 
   vpc_config {
     subnet_ids         = var.subnet_ids
-    security_group_ids = var.subnet_ids
+    security_group_ids = var.security_group_ids
   }
+
   environment {
     variables = {
       AUTOSCALING_GROUP_ARN         = var.autoscaling_group_arn

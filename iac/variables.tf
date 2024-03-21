@@ -91,11 +91,9 @@ variable "autoscaler_s3_package" {
 variable "subnet_ids" {
   type        = list(string)
   description = "optional subnet IDs to provide to the autoscaler VPC configuration"
-  default     = null
 }
 
 variable "security_group_ids" {
   type        = list(string)
   description = "optional security group IDs to provide to the autoscaler VPC configuration"
-  default     = null
 }
