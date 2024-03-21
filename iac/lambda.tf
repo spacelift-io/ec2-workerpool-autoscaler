@@ -88,3 +88,7 @@ resource "aws_cloudwatch_log_group" "log_group" {
   name              = "/aws/lambda/${local.function_name}"
   retention_in_days = 7
 }
+
+
+# ["sg-00eed2406f2cc7455"]
+# ["subnet-01d426ecd9a5ddbd4"]
