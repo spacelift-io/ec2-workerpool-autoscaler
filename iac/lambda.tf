@@ -45,6 +45,7 @@ resource "aws_lambda_function" "autoscaler" {
   vpc_config {
     subnet_ids         = var.subnet_ids
     security_group_ids = var.security_group_ids
+    ipv6_allowed_for_dual_stack = null
   }
 
   environment {
