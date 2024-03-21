@@ -29,7 +29,6 @@ variable "spacelift_api_key_secret" {
 variable "spacelift_api_key_endpoint" {
   type        = string
   description = "Full URL of the Spacelift API endpoint to use, eg. https://demo.app.spacelift.io"
-  default     = null
 }
 
 variable "worker_pool_id" {
@@ -81,9 +80,22 @@ variable "region" {
 
 variable "autoscaler_s3_package" {
   type = object({
-    bucket = string
-    key    = string
+    bucket         = string
+    key            = string
     object_version = optional(string)
   })
   description = "Configuration to retrieve autoscaler lambda package from s3 bucket"
+  default     = null
+}
+
+variable "subnet_ids" {
+  type        = list(string)
+  description = "optional subnet IDs to provide to the autoscaler VPC configuration"
+  default     = null
+}
+
+variable "security_group_ids" {
+  type        = list(string)
+  description = "optional security group IDs to provide to the autoscaler VPC configuration"
+  default     = null
 }
