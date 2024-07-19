@@ -14,11 +14,11 @@ type State struct {
 	ASG        *types.AutoScalingGroup
 
 	inServiceInstanceIDs map[InstanceID]struct{}
-	workersByInstanceID  map[InstanceID]*Worker
+	workersByInstanceID  map[InstanceID]Worker
 }
 
 func NewState(workerPool *WorkerPool, asg *types.AutoScalingGroup) (*State, error) {
-	workersByInstanceID := make(map[InstanceID]*Worker)
+	workersByInstanceID := make(map[InstanceID]Worker)
 	inServiceInstanceIDs := make(map[InstanceID]struct{})
 
 	// Validate the ASG.
@@ -49,7 +49,7 @@ func NewState(workerPool *WorkerPool, asg *types.AutoScalingGroup) (*State, erro
 			return nil, fmt.Errorf("incorrect worker ASG: %s", groupID)
 		}
 
-		workersByInstanceID[instanceID] = &worker
+		workersByInstanceID[instanceID] = worker
 	}
 
 	for _, instance := range asg.Instances {
