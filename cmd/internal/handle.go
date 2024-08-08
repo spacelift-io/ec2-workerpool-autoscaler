@@ -157,9 +157,9 @@ func killWorkers(ctx context.Context, logger *slog.Logger, workers []internal.Wo
 		logger.With(
 			"worker_id", worker.ID,
 			"instance_id", instanceID,
-		).Info("killing worker already idled worker")
+		).Info("killing drained worker")
 		if err := controller.KillInstance(ctx, string(instanceID)); err != nil {
-			return fmt.Errorf("could not kill already drained instance: %w", err)
+			return fmt.Errorf("could not kill drained instance: %w", err)
 		}
 	}
 	return nil
