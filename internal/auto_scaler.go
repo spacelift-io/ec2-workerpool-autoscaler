@@ -10,7 +10,7 @@ import (
 	"golang.org/x/exp/slog"
 )
 
-//go:generate mockery --output ./ --name ControllerInterface --filename mock_controller_test.go --outpkg internal_test
+//go:generate mockery --output ./ --name ControllerInterface --filename mock_controller_test.go --outpkg internal_test --structname MockController
 type ControllerInterface interface {
 	DescribeInstances(ctx context.Context, instanceIDs []string) (instances []ec2types.Instance, err error)
 	GetAutoscalingGroup(ctx context.Context) (out *autoscalingtypes.AutoScalingGroup, err error)

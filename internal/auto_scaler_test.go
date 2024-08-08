@@ -1,28 +1,31 @@
-package internal
+package internal_test
 
 import (
 	"bytes"
 	"context"
+	"testing"
+
 	"github.com/aws/aws-sdk-go-v2/service/autoscaling/types"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/exp/slog"
-	"testing"
+
+	"github.com/spacelift-io/awsautoscalr/internal"
 )
 
 func TestAutoScalerScalingNone(t *testing.T) {
 	var buf bytes.Buffer
 	h := slog.NewTextHandler(&buf, nil)
 
-	cfg := RuntimeConfig{}
+	cfg := internal.RuntimeConfig{}
 
-	ctrl := new(MockControllerInterface)
+	ctrl := new(MockController)
 	defer ctrl.AssertExpectations(t)
 
-	scaler := NewAutoScaler(ctrl, slog.New(h))
+	scaler := internal.NewAutoScaler(ctrl, slog.New(h))
 
-	ctrl.On("GetWorkerPool", mock.Anything).Return(&WorkerPool{
-		Workers: []Worker{
+	ctrl.On("GetWorkerPool", mock.Anything).Return(&internal.WorkerPool{
+		Workers: []internal.Worker{
 			{
 				ID:       "1",
 				Metadata: `{"asg_id": "group", "instance_id": "instance"}`,
@@ -43,15 +46,15 @@ func TestAutoScalerScalingUp(t *testing.T) {
 	var buf bytes.Buffer
 	h := slog.NewTextHandler(&buf, nil)
 
-	cfg := RuntimeConfig{}
+	cfg := internal.RuntimeConfig{}
 
-	ctrl := new(MockControllerInterface)
+	ctrl := new(MockController)
 	defer ctrl.AssertExpectations(t)
 
-	scaler := NewAutoScaler(ctrl, slog.New(h))
+	scaler := internal.NewAutoScaler(ctrl, slog.New(h))
 
-	ctrl.On("GetWorkerPool", mock.Anything).Return(&WorkerPool{
-		Workers: []Worker{
+	ctrl.On("GetWorkerPool", mock.Anything).Return(&internal.WorkerPool{
+		Workers: []internal.Worker{
 			{
 				ID:       "1",
 				Metadata: `{"asg_id": "group", "instance_id": "instance"}`,
@@ -77,17 +80,17 @@ func TestAutoScalerScalingDown(t *testing.T) {
 	var buf bytes.Buffer
 	h := slog.NewTextHandler(&buf, nil)
 
-	cfg := RuntimeConfig{
+	cfg := internal.RuntimeConfig{
 		AutoscalingMaxKill: 1,
 	}
 
-	ctrl := new(MockControllerInterface)
+	ctrl := new(MockController)
 	defer ctrl.AssertExpectations(t)
 
-	scaler := NewAutoScaler(ctrl, slog.New(h))
+	scaler := internal.NewAutoScaler(ctrl, slog.New(h))
 
-	ctrl.On("GetWorkerPool", mock.Anything).Return(&WorkerPool{
-		Workers: []Worker{
+	ctrl.On("GetWorkerPool", mock.Anything).Return(&internal.WorkerPool{
+		Workers: []internal.Worker{
 			{
 				ID:       "1",
 				Metadata: `{"asg_id": "group", "instance_id": "instance"}`,
