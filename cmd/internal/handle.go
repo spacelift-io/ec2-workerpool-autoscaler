@@ -3,9 +3,11 @@ package internal
 import (
 	"context"
 	"fmt"
+
 	"github.com/caarlos0/env/v9"
-	"github.com/spacelift-io/awsautoscalr/internal"
 	"golang.org/x/exp/slog"
+
+	"github.com/spacelift-io/awsautoscalr/internal"
 )
 
 func Handle(ctx context.Context, logger *slog.Logger) error {

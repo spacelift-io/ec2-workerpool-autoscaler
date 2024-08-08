@@ -3,13 +3,14 @@ package internal
 import (
 	"context"
 	"fmt"
+	"time"
+
 	autoscalingtypes "github.com/aws/aws-sdk-go-v2/service/autoscaling/types"
 	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"golang.org/x/exp/slog"
-	"time"
 )
 
-//go:generate mockery --inpackage --name ControllerInterface --filename mock_controller_test.go
+//go:generate mockery --output ./ --name ControllerInterface --filename mock_controller_test.go --outpkg internal_test
 type ControllerInterface interface {
 	DescribeInstances(ctx context.Context, instanceIDs []string) (instances []ec2types.Instance, err error)
 	GetAutoscalingGroup(ctx context.Context) (out *autoscalingtypes.AutoScalingGroup, err error)
