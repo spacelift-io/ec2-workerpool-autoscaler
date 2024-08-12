@@ -42,6 +42,47 @@ func TestAutoScalerScalingNone(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestAutoScalerScalingNoneWithDrainedWorkers(t *testing.T) {
+	var buf bytes.Buffer
+	h := slog.NewTextHandler(&buf, nil)
+
+	cfg := internal.RuntimeConfig{}
+
+	ctrl := new(MockController)
+	defer ctrl.AssertExpectations(t)
+
+	scaler := internal.NewAutoScaler(ctrl, slog.New(h))
+
+	ctrl.On("GetWorkerPool", mock.Anything).Return(&internal.WorkerPool{
+		Workers: []internal.Worker{
+			{
+				ID:       "1",
+				Metadata: `{"asg_id": "group", "instance_id": "instance"}`,
+			},
+			{
+				ID:       "2",
+				Metadata: `{"asg_id": "group", "instance_id": "instance2"}`,
+				Drained:  true,
+			},
+			{
+				ID:       "3",
+				Metadata: `{"asg_id": "group", "instance_id": "instance3"}`,
+				Drained:  true,
+				Busy:     true,
+			},
+		},
+	}, nil)
+	ctrl.On("KillInstance", mock.Anything, "instance2").Return(nil)
+	ctrl.On("GetAutoscalingGroup", mock.Anything).Return(&types.AutoScalingGroup{
+		AutoScalingGroupName: ptr("group"),
+		MinSize:              ptr(int32(1)),
+		MaxSize:              ptr(int32(3)),
+		DesiredCapacity:      ptr(int32(2)),
+	}, nil)
+	err := scaler.Scale(context.Background(), cfg)
+	require.NoError(t, err)
+}
+
 func TestAutoScalerScalingUp(t *testing.T) {
 	var buf bytes.Buffer
 	h := slog.NewTextHandler(&buf, nil)
@@ -100,7 +141,20 @@ func TestAutoScalerScalingDown(t *testing.T) {
 				Metadata: `{"asg_id": "group", "instance_id": "instance2"}`,
 			},
 		},
-	}, nil)
+	}, nil).Once()
+	ctrl.On("GetWorkerPool", mock.Anything).Return(&internal.WorkerPool{
+		Workers: []internal.Worker{
+			{
+				ID:       "1",
+				Metadata: `{"asg_id": "group", "instance_id": "instance"}`,
+				Drained:  true,
+			},
+			{
+				ID:       "2",
+				Metadata: `{"asg_id": "group", "instance_id": "instance2"}`,
+			},
+		},
+	}, nil).Once()
 	ctrl.On("GetAutoscalingGroup", mock.Anything).Return(&types.AutoScalingGroup{
 		AutoScalingGroupName: ptr("group"),
 		MinSize:              ptr(int32(1)),

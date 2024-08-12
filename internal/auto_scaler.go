@@ -40,6 +40,12 @@ func (s AutoScaler) Scale(ctx context.Context, cfg RuntimeConfig) error {
 		return fmt.Errorf("could not get worker pool: %w", err)
 	}
 
+	// remove drained workers from the previous autoscaler run that were busy
+	err = s.extractAndKillDrainedWorkers(ctx, logger, workerPool)
+	if err != nil {
+		return fmt.Errorf("could not extract and kill already drained workers: %w", err)
+	}
+
 	asg, err := s.controller.GetAutoscalingGroup(ctx)
 	if err != nil {
 		return fmt.Errorf("could not get autoscaling group: %w", err)
@@ -111,6 +117,24 @@ func (s AutoScaler) Scale(ctx context.Context, cfg RuntimeConfig) error {
 
 	idleWorkers := state.IdleWorkers()
 
+	err = s.drainWorkers(ctx, decision, idleWorkers, logger)
+	if err != nil {
+		return fmt.Errorf("could not drain workers: %w", err)
+	}
+
+	// fetch again workers and kill only drained non-busy workers
+	workerPool, err = s.controller.GetWorkerPool(ctx)
+	if err != nil {
+		return fmt.Errorf("could not get worker pool: %w", err)
+	}
+	err = s.extractAndKillDrainedWorkers(ctx, logger, workerPool)
+	if err != nil {
+		return fmt.Errorf("could not extract and kill drained workers: %w", err)
+	}
+	return nil
+}
+
+func (s AutoScaler) drainWorkers(ctx context.Context, decision Decision, idleWorkers []Worker, logger *slog.Logger) error {
 	for i := 0; i < decision.ScalingSize; i++ {
 		worker := idleWorkers[i]
 
@@ -122,20 +146,41 @@ func (s AutoScaler) Scale(ctx context.Context, cfg RuntimeConfig) error {
 		)
 		logger.Info("scaling down ASG and killing worker")
 
-		drained, err := s.controller.DrainWorker(ctx, worker.ID)
+		_, err := s.controller.DrainWorker(ctx, worker.ID)
 		if err != nil {
 			return fmt.Errorf("could not drain worker: %w", err)
 		}
+	}
+	return nil
+}
 
-		if !drained {
-			logger.Warn("worker was busy, stopping the scaling down process")
-			return nil
+func (s AutoScaler) extractAndKillDrainedWorkers(ctx context.Context, logger *slog.Logger, workerPool *WorkerPool) error {
+	drainedWorkers := workerPool.ExtractDrainedWorkers()
+	err := s.killWorkers(ctx, logger, drainedWorkers)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s AutoScaler) killWorkers(ctx context.Context, logger *slog.Logger, workers []Worker) error {
+	for _, worker := range workers {
+		if worker.Busy {
+			continue
 		}
+		_, instanceID, err := worker.InstanceIdentity()
+		if err != nil {
+			logger.Error("could not determine instance ID", "instance_id", instanceID)
+			continue
+		}
+		logger.With(
+			"worker_id", worker.ID,
+			"instance_id", instanceID,
+		).Info("killing drained worker")
 
 		if err := s.controller.KillInstance(ctx, string(instanceID)); err != nil {
-			return fmt.Errorf("could not kill instance: %w", err)
+			return fmt.Errorf("could not kill drained instance: %w", err)
 		}
 	}
-
 	return nil
 }
