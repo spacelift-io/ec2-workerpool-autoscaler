@@ -21,6 +21,7 @@ func main() {
 			return fmt.Errorf("could not configure X-Ray: %w", err)
 		}
 
+		logger := logger
 		if lc, ok := lambdacontext.FromContext(ctx); ok {
 			logger = logger.With("aws_request_id", lc.AwsRequestID)
 		}

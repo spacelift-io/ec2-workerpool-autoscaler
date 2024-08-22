@@ -61,7 +61,7 @@ func (s AutoScaler) Scale(ctx context.Context, cfg RuntimeConfig) error {
 		}
 
 		for _, instance := range instances {
-			logger = logger.With("instance_id", *instance.InstanceId)
+			logger := logger.With("instance_id", *instance.InstanceId)
 			instanceAge := time.Since(*instance.LaunchTime)
 
 			logger = logger.With(
@@ -116,7 +116,7 @@ func (s AutoScaler) Scale(ctx context.Context, cfg RuntimeConfig) error {
 
 		_, instanceID, _ := worker.InstanceIdentity()
 
-		logger = logger.With(
+		logger := logger.With(
 			"worker_id", worker.ID,
 			"instance_id", instanceID,
 		)
