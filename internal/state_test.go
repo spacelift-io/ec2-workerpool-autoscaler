@@ -2,13 +2,13 @@ package internal_test
 
 import (
 	"encoding/json"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/service/autoscaling/types"
 	"github.com/franela/goblin"
 	. "github.com/onsi/gomega"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/spacelift-io/awsautoscalr/internal"
 )

@@ -3,11 +3,11 @@ package internal_test
 import (
 	"bytes"
 	"context"
-	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"testing"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/autoscaling/types"
+	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/exp/slog"
