@@ -7,9 +7,51 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/autoscaling/types"
 	"github.com/franela/goblin"
 	. "github.com/onsi/gomega"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/spacelift-io/awsautoscalr/internal"
 )
+
+func TestState_StrayInstances(t *testing.T) {
+	const asgName = "asg-name"
+	const instanceID = "instance-id"
+	const failedToTerminateInstanceID = "instance-id2"
+	asg := &types.AutoScalingGroup{
+		AutoScalingGroupName: nullable(asgName),
+		MinSize:              nullable(int32(1)),
+		MaxSize:              nullable(int32(5)),
+		DesiredCapacity:      nullable(int32(3)),
+		Instances: []types.Instance{
+			{
+				InstanceId: nullable(instanceID),
+			},
+		},
+	}
+	workerPool := &internal.WorkerPool{
+		Workers: []internal.Worker{
+			{
+				Metadata: mustJSON(map[string]any{
+					"asg_id":      asgName,
+					"instance_id": instanceID,
+				}),
+			},
+			{
+				Drained: true,
+				Metadata: mustJSON(map[string]any{
+					"asg_id":      asgName,
+					"instance_id": failedToTerminateInstanceID,
+				}),
+			},
+		},
+	}
+
+	state, err := internal.NewState(workerPool, asg)
+	require.NoError(t, err)
+
+	strayInstances := state.StrayInstances()
+	assert.Equal(t, []string{failedToTerminateInstanceID}, strayInstances)
+}
 
 func TestState(t *testing.T) {
 	g := goblin.Goblin(t)

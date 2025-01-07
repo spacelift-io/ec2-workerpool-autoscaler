@@ -14,11 +14,11 @@ type State struct {
 	ASG        *types.AutoScalingGroup
 
 	inServiceInstanceIDs map[InstanceID]struct{}
-	workersByInstanceID  map[InstanceID]*Worker
+	workersByInstanceID  map[InstanceID]Worker
 }
 
 func NewState(workerPool *WorkerPool, asg *types.AutoScalingGroup) (*State, error) {
-	workersByInstanceID := make(map[InstanceID]*Worker)
+	workersByInstanceID := make(map[InstanceID]Worker)
 	inServiceInstanceIDs := make(map[InstanceID]struct{})
 
 	// Validate the ASG.
@@ -49,7 +49,7 @@ func NewState(workerPool *WorkerPool, asg *types.AutoScalingGroup) (*State, erro
 			return nil, fmt.Errorf("incorrect worker ASG: %s", groupID)
 		}
 
-		workersByInstanceID[instanceID] = &worker
+		workersByInstanceID[instanceID] = worker
 	}
 
 	for _, instance := range asg.Instances {
@@ -85,14 +85,37 @@ func (s *State) IdleWorkers() []Worker {
 
 // StrayInstances returns a list of instance IDs that don't have a corresponding
 // worker in the worker pool.
-func (s *State) StrayInstances() (out []string) {
+func (s *State) StrayInstances() []string {
+	var res []string
 	for instanceID := range s.inServiceInstanceIDs {
 		if _, ok := s.workersByInstanceID[instanceID]; !ok {
-			out = append(out, string(instanceID))
+			res = append(res, string(instanceID))
 		}
 	}
 
-	return
+	res = append(res, s.detachedNotTerminatedInstances()...)
+
+	return res
+}
+
+func (s *State) detachedNotTerminatedInstances() []string {
+	instanceIDs := make(map[InstanceID]struct{})
+	for _, instance := range s.ASG.Instances {
+		instanceIDs[InstanceID(*instance.InstanceId)] = struct{}{}
+	}
+
+	var res []string
+	for instanceID, worker := range s.workersByInstanceID {
+		if !worker.Drained {
+			continue
+		}
+		if _, ok := instanceIDs[instanceID]; ok {
+			continue
+		}
+
+		res = append(res, string(instanceID))
+	}
+	return res
 }
 
 func (s *State) Decide(maxCreate, maxKill int) Decision {

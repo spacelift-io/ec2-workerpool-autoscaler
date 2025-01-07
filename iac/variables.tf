@@ -6,13 +6,7 @@ variable "autoscaling_group_arn" {
 variable "autoscaler_version" {
   type        = string
   description = "Version of the autoscaler to deploy"
-  default     = "v0.3.0"
-}
-
-variable "autoscaling_frequency" {
-  type        = number
-  description = "How often to run the autoscaler, in minutes"
-  default     = 5
+  default     = "latest"
 }
 
 variable "spacelift_api_key_id" {
