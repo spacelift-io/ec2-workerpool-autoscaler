@@ -93,3 +93,9 @@ variable "security_group_ids" {
   description = "optional security group IDs to provide to the autoscaler VPC configuration"
   default     = [""]
 }
+
+variable "autoscaler_permissions_boundary" {
+  type        = string
+  default     = null
+  description = "ARN of the policy that is used to set the permissions boundary for the autoscale IAM role."
+}
