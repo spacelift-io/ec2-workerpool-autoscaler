@@ -86,4 +86,6 @@ resource "aws_iam_role" "autoscaler" {
     name   = "ec2-autoscaler-${var.worker_pool_id}"
     policy = data.aws_iam_policy_document.autoscaler.json
   }
+
+  permissions_boundary = var.autoscaler_permissions_boundary
 }
