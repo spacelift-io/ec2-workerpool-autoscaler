@@ -67,11 +67,6 @@ variable "base_name" {
   default     = null
 }
 
-variable "region" {
-  type        = string
-  description = "AWS Region where the provider will operate"
-}
-
 variable "autoscaler_s3_package" {
   type = object({
     bucket         = string
