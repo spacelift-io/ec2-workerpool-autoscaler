@@ -2,13 +2,13 @@ package internal_test
 
 import (
 	"encoding/json"
-	"testing"
-
 	"github.com/aws/aws-sdk-go-v2/service/autoscaling/types"
 	"github.com/franela/goblin"
 	. "github.com/onsi/gomega"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"testing"
+	"time"
 
 	"github.com/spacelift-io/awsautoscalr/internal"
 )
@@ -17,6 +17,7 @@ func TestState_StrayInstances(t *testing.T) {
 	const asgName = "asg-name"
 	const instanceID = "instance-id"
 	const failedToTerminateInstanceID = "instance-id2"
+	cfg := internal.RuntimeConfig{}
 	asg := &types.AutoScalingGroup{
 		AutoScalingGroupName: nullable(asgName),
 		MinSize:              nullable(int32(1)),
@@ -46,7 +47,7 @@ func TestState_StrayInstances(t *testing.T) {
 		},
 	}
 
-	state, err := internal.NewState(workerPool, asg)
+	state, err := internal.NewState(workerPool, asg, cfg)
 	require.NoError(t, err)
 
 	strayInstances := state.StrayInstances()
@@ -60,6 +61,7 @@ func TestState(t *testing.T) {
 	g.Describe("State", func() {
 		var asg *types.AutoScalingGroup
 		var workerPool *internal.WorkerPool
+		var cfg internal.RuntimeConfig
 
 		var sut *internal.State
 
@@ -76,9 +78,10 @@ func TestState(t *testing.T) {
 					DesiredCapacity:      nullable(int32(3)),
 				}
 				workerPool = &internal.WorkerPool{}
+				cfg = internal.RuntimeConfig{}
 			})
 
-			g.JustBeforeEach(func() { sut, err = internal.NewState(workerPool, asg) })
+			g.JustBeforeEach(func() { sut, err = internal.NewState(workerPool, asg, cfg) })
 
 			g.Describe("when the ASG is invalid", func() {
 				g.Describe("when the name is not set", func() {
@@ -210,10 +213,10 @@ func TestState(t *testing.T) {
 			})
 		})
 
-		g.Describe("IdleWorkers", func() {
-			var idleWorkers []internal.Worker
+		g.Describe("ScaleableWorkers", func() {
+			var scalableWorkers []internal.Worker
 
-			g.JustBeforeEach(func() { idleWorkers = sut.IdleWorkers() })
+			g.JustBeforeEach(func() { scalableWorkers = sut.ScalableWorkers() })
 
 			g.BeforeEach(func() {
 				workerPool.Workers = []internal.Worker{
@@ -223,8 +226,8 @@ func TestState(t *testing.T) {
 			})
 
 			g.It("should return the idle workers", func() {
-				Expect(idleWorkers).To(HaveLen(1))
-				Expect(idleWorkers[0].ID).To(Equal("idle"))
+				Expect(scalableWorkers).To(HaveLen(1))
+				Expect(scalableWorkers[0].ID).To(Equal("idle"))
 			})
 		})
 
@@ -243,10 +246,20 @@ func TestState(t *testing.T) {
 				}
 				workerPool = &internal.WorkerPool{}
 
-				sut = &internal.State{
-					WorkerPool: workerPool,
-					ASG:        asg,
+				asg = &types.AutoScalingGroup{
+					AutoScalingGroupName: nullable("asg-name"),
+					MinSize:              nullable(int32(1)),
+					MaxSize:              nullable(int32(2)),
+					DesiredCapacity:      nullable(int32(2)),
 				}
+				workerPool = &internal.WorkerPool{}
+				cfg = internal.RuntimeConfig{
+					AutoscalingScaleDownDelay: 50,
+				}
+
+				var err error
+				sut, err = internal.NewState(workerPool, asg, cfg)
+				Expect(err).NotTo(HaveOccurred())
 			})
 
 			g.JustBeforeEach(func() {
@@ -401,6 +414,24 @@ func TestState(t *testing.T) {
 									Expect(decision.Comments).To(Equal([]string{"removing idle workers"}))
 								})
 							})
+
+							g.Describe("when waiting some time for idle workers", func() {
+								g.BeforeEach(func() {
+									workerPool.Workers = []internal.Worker{
+										{ID: "busy", Busy: true},
+										{ID: "idle", Busy: false, CreatedAt: int32(time.Now().Unix())},
+									}
+								})
+
+								g.It("should not scale down because the worker is busy and not enough time has passed", func() {
+									Expect(decision.ScalingDirection).To(Equal(internal.ScalingDirectionNone))
+									Expect(decision.ScalingSize).To(BeZero())
+									Expect(decision.Comments).To(Equal([]string{
+										"autoscaling group exactly at the right size",
+									}))
+								})
+							})
+
 						})
 					})
 				})

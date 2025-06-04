@@ -25,6 +25,7 @@ Two additional environment variables are optional, but very useful if you're run
 
 - `AUTOSCALING_MAX_KILL` (defaults to 1) - the maximum number of instances the utility is allowed to terminate in a single run;
 - `AUTOSCALING_MAX_CREATE` (defaults to 1) - the maximum number of instances the utility is allowed to create in a single run;
+- `AUTOSCALING_SCALE_DOWN_DELAY` (defaults to 0) - the number of minutes a worker must be registered to Spacelift before its eligible to be scaled in.
 
 ## Important note on concurrency
 

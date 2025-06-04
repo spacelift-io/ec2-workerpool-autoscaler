@@ -45,7 +45,7 @@ func (s AutoScaler) Scale(ctx context.Context, cfg RuntimeConfig) error {
 		return fmt.Errorf("could not get autoscaling group: %w", err)
 	}
 
-	state, err := NewState(workerPool, asg)
+	state, err := NewState(workerPool, asg, cfg)
 	if err != nil {
 		return fmt.Errorf("could not create state: %w", err)
 	}
@@ -109,10 +109,10 @@ func (s AutoScaler) Scale(ctx context.Context, cfg RuntimeConfig) error {
 	// If we got this far, we're scaling down.
 	logger.With("instances", decision.ScalingSize).Info("scaling down ASG")
 
-	idleWorkers := state.IdleWorkers()
+	scalableWorkers := state.ScalableWorkers()
 
 	for i := 0; i < decision.ScalingSize; i++ {
-		worker := idleWorkers[i]
+		worker := scalableWorkers[i]
 
 		_, instanceID, _ := worker.InstanceIdentity()
 

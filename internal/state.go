@@ -2,8 +2,8 @@ package internal
 
 import (
 	"fmt"
-
 	"github.com/aws/aws-sdk-go-v2/service/autoscaling/types"
+	"time"
 )
 
 // State represents the state of the world, as far as the autoscaler is
@@ -15,9 +15,10 @@ type State struct {
 
 	inServiceInstanceIDs map[InstanceID]struct{}
 	workersByInstanceID  map[InstanceID]Worker
+	cfg                  RuntimeConfig
 }
 
-func NewState(workerPool *WorkerPool, asg *types.AutoScalingGroup) (*State, error) {
+func NewState(workerPool *WorkerPool, asg *types.AutoScalingGroup, cfg RuntimeConfig) (*State, error) {
 	workersByInstanceID := make(map[InstanceID]Worker)
 	inServiceInstanceIDs := make(map[InstanceID]struct{})
 
@@ -65,16 +66,26 @@ func NewState(workerPool *WorkerPool, asg *types.AutoScalingGroup) (*State, erro
 		ASG:                  asg,
 		inServiceInstanceIDs: inServiceInstanceIDs,
 		workersByInstanceID:  workersByInstanceID,
+		cfg:                  cfg,
 	}, nil
 }
 
-// IdleWorkers returns a list of workers that are not currently busy.
-func (s *State) IdleWorkers() []Worker {
+// ScalableWorkers returns a list of workers that are not currently busy.
+func (s *State) ScalableWorkers() []Worker {
 	var out []Worker
-
 	for _, worker := range s.WorkerPool.Workers {
 		if worker.Busy {
 			continue
+		}
+
+		// Even though the worker might be idle, we will give it some time to pick up more work
+		// if the customer wants
+		if s.cfg.AutoscalingScaleDownDelay != 0 {
+			workerCreationTime := time.Unix(int64(worker.CreatedAt), 0)
+			minimumAliveTime := workerCreationTime.Add(time.Duration(s.cfg.AutoscalingScaleDownDelay) * time.Minute)
+			if !time.Now().After(minimumAliveTime) {
+				continue
+			}
 		}
 
 		out = append(out, worker)
@@ -126,9 +137,9 @@ func (s *State) Decide(maxCreate, maxKill int) Decision {
 		}
 	}
 
-	idle := s.IdleWorkers()
+	scalable := s.ScalableWorkers()
 
-	difference := int(s.WorkerPool.PendingRuns) - len(idle)
+	difference := int(s.WorkerPool.PendingRuns) - len(scalable)
 
 	if difference > 0 {
 		return s.determineScaleUp(difference, maxCreate)
