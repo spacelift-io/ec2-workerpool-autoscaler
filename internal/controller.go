@@ -298,6 +298,9 @@ func (c *Controller) ScaleUpASG(ctx context.Context, desiredCapacity int32) (err
 
 func (c *Controller) workerDrainSet(ctx context.Context, workerID string, drain bool) (worker *Worker, err error) {
 	xray.Capture(ctx, fmt.Sprintf("spacelift.worker.setdrain.%t", drain), func(ctx context.Context) error {
+		xray.AddAnnotation(ctx, "worker_id", workerID)
+		xray.AddAnnotation(ctx, "worker_pool_id", c.SpaceliftWorkerPoolID)
+		xray.AddAnnotation(ctx, "drain", drain)
 		var mutation WorkerDrainSet
 
 		variables := map[string]any{
