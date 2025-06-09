@@ -91,6 +91,11 @@ func (s AutoScaler) Scale(ctx context.Context, cfg RuntimeConfig) error {
 
 	decision := state.Decide(cfg.AutoscalingMaxCreate, cfg.AutoscalingMaxKill)
 
+	logger = logger.With(
+		"asg_desired_capacity", asg.DesiredCapacity,
+		"spacelift_workers", len(workerPool.Workers),
+	)
+
 	if decision.ScalingDirection == ScalingDirectionNone {
 		logger.Info("no scaling decision to be made")
 		return nil
