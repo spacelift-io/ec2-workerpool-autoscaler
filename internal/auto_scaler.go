@@ -94,6 +94,7 @@ func (s AutoScaler) Scale(ctx context.Context, cfg RuntimeConfig) error {
 	logger = logger.With(
 		"asg_desired_capacity", asg.DesiredCapacity,
 		"spacelift_workers", len(workerPool.Workers),
+		"spacelift_pending_runs", workerPool.PendingRuns,
 	)
 
 	if decision.ScalingDirection == ScalingDirectionNone {
