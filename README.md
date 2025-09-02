@@ -65,7 +65,7 @@ The utility is designed to be executed periodically. Each execution performs the
 
     - the number of schedulable runs;
 
-    - the number of currently running workers;
+    - the number of currently running workers (excluding drained workers);
 
 1. Get the data about the autoscaling group;
 

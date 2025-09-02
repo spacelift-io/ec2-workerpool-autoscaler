@@ -182,6 +182,18 @@ func (c *Controller) GetWorkerPool(ctx context.Context) (out *WorkerPool, err er
 			return err
 		}
 
+		// Remove any drained workers from the list of workers in the pool.
+		// These don't count towards the "available workers", so they shouldn't
+		// be included when making a scaling decision.
+		worker_index := 0
+		for _, worker := range wpDetails.Pool.Workers {
+			if !worker.Drained {
+				wpDetails.Pool.Workers[worker_index] = worker
+				worker_index++
+			}
+		}
+		wpDetails.Pool.Workers = wpDetails.Pool.Workers[:worker_index]
+
 		// Let's sort the workers by their creation time. This is important
 		// because Spacelift will always prioritize the newest workers for new runs,
 		// so operating on the oldest ones first is going to be the safest.
