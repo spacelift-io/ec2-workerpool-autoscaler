@@ -30,6 +30,8 @@ func NewAutoScaler(controller ControllerInterface, logger *slog.Logger) *AutoSca
 }
 
 func (s AutoScaler) Scale(ctx context.Context, cfg RuntimeConfig) error {
+	error_count := 0
+
 	logger := s.logger.With(
 		"asg_arn", cfg.AutoscalingGroupARN,
 		"worker_pool_id", cfg.SpaceliftWorkerPoolID,
@@ -60,6 +62,7 @@ func (s AutoScaler) Scale(ctx context.Context, cfg RuntimeConfig) error {
 			return fmt.Errorf("could not list EC2 instances: %w", err)
 		}
 
+		STRAY_INSTANCES:
 		for _, instance := range instances {
 			logger := logger.With("instance_id", *instance.InstanceId)
 			instanceAge := time.Since(*instance.LaunchTime)
@@ -77,14 +80,16 @@ func (s AutoScaler) Scale(ctx context.Context, cfg RuntimeConfig) error {
 				logger.Warn("instance has no corresponding worker in Spacelift, removing from the ASG")
 
 				if err := s.controller.KillInstance(ctx, *instance.InstanceId); err != nil {
-					return fmt.Errorf("could not kill instance: %w", err)
+					logger.Error("could not kill stray instance: %w", err)
+					error_count++
+					continue STRAY_INSTANCES
 				}
 
 				// We don't want to kill too many instances at once, so let's
 				// return after the first successfully killed one.
 				logger.Info("instance successfully removed from the ASG and terminated")
 
-				return nil
+				break
 			}
 		}
 	}
@@ -117,6 +122,7 @@ func (s AutoScaler) Scale(ctx context.Context, cfg RuntimeConfig) error {
 
 	scalableWorkers := state.ScalableWorkers()
 
+	SCALABLE_WORKERS:
 	for i := 0; i < decision.ScalingSize; i++ {
 		worker := scalableWorkers[i]
 
@@ -130,17 +136,25 @@ func (s AutoScaler) Scale(ctx context.Context, cfg RuntimeConfig) error {
 
 		drained, err := s.controller.DrainWorker(ctx, worker.ID)
 		if err != nil {
-			return fmt.Errorf("could not drain worker: %w", err)
+			logger.Error("could not drain worker: %w", err)
+			error_count++
+			continue SCALABLE_WORKERS
 		}
 
 		if !drained {
-			logger.Warn("worker was busy, stopping the scaling down process")
-			return nil
+			logger.Warn("worker was busy; skipping termination")
+			continue SCALABLE_WORKERS
 		}
 
 		if err := s.controller.KillInstance(ctx, string(instanceID)); err != nil {
-			return fmt.Errorf("could not kill instance: %w", err)
+			logger.Error("could not kill instance: %w", err)
+			error_count++
+			continue SCALABLE_WORKERS
 		}
+	}
+
+	if error_count > 0 {
+		return fmt.Errorf("encountered %d errors during scale-down", error_count)
 	}
 
 	return nil
