@@ -270,13 +270,14 @@ func TestController(t *testing.T) {
 					g.BeforeEach(func() {
 						returnedPool = &internal.WorkerPool{
 							Workers: []internal.Worker{
-								{ID: "newer", CreatedAt: 5},
-								{ID: "older", CreatedAt: 1},
+								{ID: "newer", CreatedAt: 5, Drained: false},
+								{ID: "drained", CreatedAt: 2, Drained: true},
+								{ID: "older", CreatedAt: 1, Drained: false},
 							},
 						}
 					})
 
-					g.It("should return the worker pool with sorted workers", func() {
+					g.It("should return the worker pool with sorted and filtered workers", func() {
 						Expect(err).NotTo(HaveOccurred())
 						Expect(workerPool).NotTo(BeNil())
 						Expect(workerPool.Workers).To(HaveLen(2))
