@@ -85,11 +85,7 @@ func (s AutoScaler) Scale(ctx context.Context, cfg RuntimeConfig) error {
 					continue STRAY_INSTANCES
 				}
 
-				// We don't want to kill too many instances at once, so let's
-				// return after the first successfully killed one.
 				logger.Info("instance successfully removed from the ASG and terminated")
-
-				break
 			}
 		}
 	}
