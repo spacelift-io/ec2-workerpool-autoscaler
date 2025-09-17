@@ -101,7 +101,7 @@ func (s AutoScaler) Scale(ctx context.Context, cfg RuntimeConfig) error {
 	)
 
 	if decision.ScalingDirection == ScalingDirectionNone {
-		logger.Info("no scaling decision to be made")
+		logger.Info("not scaling the ASG")
 		return nil
 	}
 
