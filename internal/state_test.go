@@ -320,7 +320,7 @@ func TestState(t *testing.T) {
 								Expect(decision.ScalingSize).To(Equal(1))
 								Expect(decision.Comments).To(Equal([]string{
 									"need 5 workers, but can only create 1",
-									"adding workers to match pending runs",
+									"adding 1 workers to match pending runs",
 								}))
 							})
 						})
@@ -334,7 +334,7 @@ func TestState(t *testing.T) {
 								g.It("scales up by 5", func() {
 									Expect(decision.ScalingDirection).To(Equal(internal.ScalingDirectionUp))
 									Expect(decision.ScalingSize).To(Equal(5))
-									Expect(decision.Comments).To(Equal([]string{"adding workers to match pending runs"}))
+									Expect(decision.Comments).To(Equal([]string{"adding 5 workers to match pending runs"}))
 								})
 							})
 
@@ -345,7 +345,7 @@ func TestState(t *testing.T) {
 									Expect(decision.ScalingDirection).To(Equal(internal.ScalingDirectionUp))
 									Expect(decision.ScalingSize).To(Equal(2))
 									Expect(decision.Comments).To(Equal([]string{
-										"adding workers to match pending runs, up to the ASG max size",
+										"adding 2 workers to match pending runs, up to the ASG max size",
 									}))
 								})
 							})
@@ -384,7 +384,7 @@ func TestState(t *testing.T) {
 								Expect(decision.ScalingSize).To(Equal(1))
 								Expect(decision.Comments).To(Equal([]string{
 									"need to kill 2 workers, but can only kill 1",
-									"removing idle workers",
+									"removing 1 idle workers",
 								}))
 							})
 						})
@@ -400,7 +400,7 @@ func TestState(t *testing.T) {
 									Expect(decision.ScalingSize).To(Equal(1))
 									Expect(decision.Comments).To(Equal([]string{
 										"need to kill 2 workers, but can't get below minimum size of 1",
-										"removing idle workers",
+										"removing 1 idle workers",
 									}))
 								})
 							})
@@ -411,7 +411,7 @@ func TestState(t *testing.T) {
 								g.It("scales down by 2", func() {
 									Expect(decision.ScalingDirection).To(Equal(internal.ScalingDirectionDown))
 									Expect(decision.ScalingSize).To(Equal(2))
-									Expect(decision.Comments).To(Equal([]string{"removing idle workers"}))
+									Expect(decision.Comments).To(Equal([]string{"removing 2 idle workers"}))
 								})
 							})
 

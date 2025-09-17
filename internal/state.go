@@ -176,14 +176,16 @@ func (s *State) determineScaleUp(missingWorkers, maxCreate int) Decision {
 		return Decision{
 			ScalingDirection: ScalingDirectionUp,
 			ScalingSize:      missingWorkers,
-			Comments:         append(comments, "adding workers to match pending runs"),
+			Comments:         append(comments, fmt.Sprintf("adding %d workers to match pending runs", missingWorkers)),
 		}
 	}
 
+	scalingSize := int(*s.ASG.MaxSize - *s.ASG.DesiredCapacity)
+
 	return Decision{
 		ScalingDirection: ScalingDirectionUp,
-		ScalingSize:      int(*s.ASG.MaxSize - *s.ASG.DesiredCapacity),
-		Comments:         append(comments, "adding workers to match pending runs, up to the ASG max size"),
+		ScalingSize:      scalingSize,
+		Comments:         append(comments, fmt.Sprintf("adding %d workers to match pending runs, up to the ASG max size", scalingSize)),
 	}
 }
 
@@ -210,6 +212,6 @@ func (s *State) determineScaleDown(extraWorkers, maxKill int) Decision {
 	return Decision{
 		ScalingDirection: ScalingDirectionDown,
 		ScalingSize:      extraWorkers,
-		Comments:         append(comments, "removing idle workers"),
+		Comments:         append(comments, fmt.Sprintf("removing %d idle workers", extraWorkers)),
 	}
 }
