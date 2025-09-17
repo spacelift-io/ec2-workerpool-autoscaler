@@ -93,6 +93,7 @@ func (s AutoScaler) Scale(ctx context.Context, cfg RuntimeConfig) error {
 	decision := state.Decide(cfg.AutoscalingMaxCreate, cfg.AutoscalingMaxKill)
 
 	logger = logger.With(
+		"asg_instances", len(asg.Instances),
 		"asg_desired_capacity", asg.DesiredCapacity,
 		"scaling_decision_comments", decision.Comments,
 		"spacelift_workers", len(workerPool.Workers),
