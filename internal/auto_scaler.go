@@ -62,7 +62,6 @@ func (s AutoScaler) Scale(ctx context.Context, cfg RuntimeConfig) error {
 			return fmt.Errorf("could not list EC2 instances: %w", err)
 		}
 
-		STRAY_INSTANCES:
 		for _, instance := range instances {
 			logger := logger.With("instance_id", *instance.InstanceId)
 			instanceAge := time.Since(*instance.LaunchTime)
@@ -82,7 +81,7 @@ func (s AutoScaler) Scale(ctx context.Context, cfg RuntimeConfig) error {
 				if err := s.controller.KillInstance(ctx, *instance.InstanceId); err != nil {
 					logger.Error("could not kill stray instance: %w", err)
 					error_count++
-					continue STRAY_INSTANCES
+					continue
 				}
 
 				logger.Info("instance successfully removed from the ASG and terminated")
@@ -120,7 +119,6 @@ func (s AutoScaler) Scale(ctx context.Context, cfg RuntimeConfig) error {
 
 	scalableWorkers := state.ScalableWorkers()
 
-	SCALABLE_WORKERS:
 	for i := 0; i < decision.ScalingSize; i++ {
 		worker := scalableWorkers[i]
 
@@ -136,18 +134,18 @@ func (s AutoScaler) Scale(ctx context.Context, cfg RuntimeConfig) error {
 		if err != nil {
 			logger.Error("could not drain worker: %w", err)
 			error_count++
-			continue SCALABLE_WORKERS
+			continue
 		}
 
 		if !drained {
 			logger.Warn("worker was busy; skipping termination")
-			continue SCALABLE_WORKERS
+			continue
 		}
 
 		if err := s.controller.KillInstance(ctx, string(instanceID)); err != nil {
 			logger.Error("could not kill instance: %w", err)
 			error_count++
-			continue SCALABLE_WORKERS
+			continue
 		}
 	}
 
