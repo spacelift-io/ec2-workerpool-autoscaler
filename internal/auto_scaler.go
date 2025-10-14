@@ -30,6 +30,8 @@ func NewAutoScaler(controller ControllerInterface, logger *slog.Logger) *AutoSca
 }
 
 func (s AutoScaler) Scale(ctx context.Context, cfg RuntimeConfig) error {
+	error_count := 0
+
 	logger := s.logger.With(
 		"asg_arn", cfg.AutoscalingGroupARN,
 		"worker_pool_id", cfg.SpaceliftWorkerPoolID,
@@ -77,14 +79,12 @@ func (s AutoScaler) Scale(ctx context.Context, cfg RuntimeConfig) error {
 				logger.Warn("instance has no corresponding worker in Spacelift, removing from the ASG")
 
 				if err := s.controller.KillInstance(ctx, *instance.InstanceId); err != nil {
-					return fmt.Errorf("could not kill instance: %w", err)
+					logger.Error("could not kill stray instance: %w", err)
+					error_count++
+					continue
 				}
 
-				// We don't want to kill too many instances at once, so let's
-				// return after the first successfully killed one.
 				logger.Info("instance successfully removed from the ASG and terminated")
-
-				return nil
 			}
 		}
 	}
@@ -92,13 +92,15 @@ func (s AutoScaler) Scale(ctx context.Context, cfg RuntimeConfig) error {
 	decision := state.Decide(cfg.AutoscalingMaxCreate, cfg.AutoscalingMaxKill)
 
 	logger = logger.With(
+		"asg_instances", len(asg.Instances),
 		"asg_desired_capacity", asg.DesiredCapacity,
+		"scaling_decision_comments", decision.Comments,
 		"spacelift_workers", len(workerPool.Workers),
 		"spacelift_pending_runs", workerPool.PendingRuns,
 	)
 
 	if decision.ScalingDirection == ScalingDirectionNone {
-		logger.Info("no scaling decision to be made")
+		logger.Info("not scaling the ASG")
 		return nil
 	}
 
@@ -130,17 +132,25 @@ func (s AutoScaler) Scale(ctx context.Context, cfg RuntimeConfig) error {
 
 		drained, err := s.controller.DrainWorker(ctx, worker.ID)
 		if err != nil {
-			return fmt.Errorf("could not drain worker: %w", err)
+			logger.Error("could not drain worker: %w", err)
+			error_count++
+			continue
 		}
 
 		if !drained {
-			logger.Warn("worker was busy, stopping the scaling down process")
-			return nil
+			logger.Warn("worker was busy; skipping termination")
+			continue
 		}
 
 		if err := s.controller.KillInstance(ctx, string(instanceID)); err != nil {
-			return fmt.Errorf("could not kill instance: %w", err)
+			logger.Error("could not kill instance: %w", err)
+			error_count++
+			continue
 		}
+	}
+
+	if error_count > 0 {
+		return fmt.Errorf("encountered %d errors during scale-down", error_count)
 	}
 
 	return nil
