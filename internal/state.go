@@ -46,8 +46,12 @@ func NewState(workerPool *WorkerPool, asg *types.AutoScalingGroup, cfg RuntimeCo
 			return nil, err
 		}
 
+		if string(groupID) == "" {
+			return nil, fmt.Errorf("worker %s has empty ASG ID in metadata", worker.ID)
+		}
+
 		if string(groupID) != *asg.AutoScalingGroupName {
-			return nil, fmt.Errorf("incorrect worker ASG: %s", groupID)
+			return nil, fmt.Errorf("worker %s has incorrect ASG: %s (expected: %s)", worker.ID, groupID, *asg.AutoScalingGroupName)
 		}
 
 		workersByInstanceID[instanceID] = worker

@@ -131,9 +131,26 @@ func TestState(t *testing.T) {
 					})
 				})
 
+				g.Describe("when the worker has an empty ASG ID", func() {
+					g.BeforeEach(func() {
+						workerPool.Workers = []internal.Worker{{
+							ID: "worker-123",
+							Metadata: mustJSON(map[string]any{
+								"asg_id":      "",
+								"instance_id": "i-1234567890",
+							}),
+						}}
+					})
+
+					g.It("should return an error", func() {
+						Expect(err).To(MatchError("worker worker-123 has empty ASG ID in metadata"))
+					})
+				})
+
 				g.Describe("when the worker does not belong to the ASG", func() {
 					g.BeforeEach(func() {
 						workerPool.Workers = []internal.Worker{{
+							ID: "worker-456",
 							Metadata: mustJSON(map[string]any{
 								"asg_id":      "other-asg",
 								"instance_id": "i-1234567890",
@@ -142,7 +159,7 @@ func TestState(t *testing.T) {
 					})
 
 					g.It("should return an error", func() {
-						Expect(err).To(MatchError("incorrect worker ASG: other-asg"))
+						Expect(err).To(MatchError("worker worker-456 has incorrect ASG: other-asg (expected: asg-name)"))
 					})
 				})
 			})
