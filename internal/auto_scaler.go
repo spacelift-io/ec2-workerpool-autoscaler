@@ -3,11 +3,11 @@ package internal
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"time"
 
 	autoscalingtypes "github.com/aws/aws-sdk-go-v2/service/autoscaling/types"
 	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
-	"golang.org/x/exp/slog"
 )
 
 //go:generate mockery --output ./ --name ControllerInterface --filename mock_controller_test.go --outpkg internal_test --structname MockController
@@ -79,7 +79,7 @@ func (s AutoScaler) Scale(ctx context.Context, cfg RuntimeConfig) error {
 				logger.Warn("instance has no corresponding worker in Spacelift, removing from the ASG")
 
 				if err := s.controller.KillInstance(ctx, *instance.InstanceId); err != nil {
-					logger.Error("could not kill stray instance: %w", err)
+					logger.Error("could not kill stray instance", "error", err)
 					error_count++
 					continue
 				}
@@ -132,7 +132,7 @@ func (s AutoScaler) Scale(ctx context.Context, cfg RuntimeConfig) error {
 
 		drained, err := s.controller.DrainWorker(ctx, worker.ID)
 		if err != nil {
-			logger.Error("could not drain worker: %w", err)
+			logger.Error("could not drain worker", "error", err)
 			error_count++
 			continue
 		}
@@ -143,7 +143,7 @@ func (s AutoScaler) Scale(ctx context.Context, cfg RuntimeConfig) error {
 		}
 
 		if err := s.controller.KillInstance(ctx, string(instanceID)); err != nil {
-			logger.Error("could not kill instance: %w", err)
+			logger.Error("could not kill instance", "error", err)
 			error_count++
 			continue
 		}

@@ -14,6 +14,9 @@ import (
 	. "github.com/onsi/gomega"
 	"github.com/shurcooL/graphql"
 	"github.com/stretchr/testify/mock"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 
 	"github.com/spacelift-io/awsautoscalr/internal"
 	"github.com/spacelift-io/awsautoscalr/internal/ifaces"
@@ -44,12 +47,18 @@ func TestController(t *testing.T) {
 			mockEC2 = &ifaces.MockEC2{}
 			mockSpacelift = &ifaces.MockSpacelift{}
 
+			tp := trace.NewTracerProvider(
+				trace.WithSpanProcessor(trace.NewSimpleSpanProcessor(tracetest.NewNoopExporter())),
+			)
+			otel.SetTracerProvider(tp)
+
 			sut = &internal.Controller{
 				Autoscaling:             mockAutoscaling,
 				EC2:                     mockEC2,
 				Spacelift:               mockSpacelift,
 				AWSAutoscalingGroupName: asgName,
 				SpaceliftWorkerPoolID:   workerPoolID,
+				Tracer:                  otel.Tracer("unittest"),
 			}
 		})
 

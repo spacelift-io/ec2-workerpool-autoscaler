@@ -3,9 +3,9 @@ package internal
 import (
 	"context"
 	"fmt"
+	"log/slog"
 
 	"github.com/caarlos0/env/v9"
-	"golang.org/x/exp/slog"
 
 	"github.com/spacelift-io/awsautoscalr/internal"
 )
