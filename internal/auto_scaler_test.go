@@ -2,7 +2,6 @@ package internal_test
 
 import (
 	"bytes"
-	"context"
 	"log/slog"
 	"testing"
 	"time"
@@ -40,7 +39,7 @@ func TestAutoScalerScalingNone(t *testing.T) {
 		MaxSize:              ptr(int32(3)),
 		DesiredCapacity:      ptr(int32(2)),
 	}, nil)
-	err := scaler.Scale(context.Background(), cfg)
+	err := scaler.Scale(t.Context(), cfg)
 	require.NoError(t, err)
 }
 
@@ -74,7 +73,7 @@ func TestAutoScalerScalingUp(t *testing.T) {
 		},
 	}, nil)
 	ctrl.On("ScaleUpASG", mock.Anything, int32(2)).Return(nil)
-	err := scaler.Scale(context.Background(), cfg)
+	err := scaler.Scale(t.Context(), cfg)
 	require.NoError(t, err)
 }
 
@@ -115,7 +114,7 @@ func TestAutoScalerScalingDown(t *testing.T) {
 	}, nil)
 	ctrl.On("DrainWorker", mock.Anything, "1").Return(true, nil)
 	ctrl.On("KillInstance", mock.Anything, "instance").Return(nil)
-	err := scaler.Scale(context.Background(), cfg)
+	err := scaler.Scale(t.Context(), cfg)
 	require.NoError(t, err)
 }
 
@@ -163,7 +162,7 @@ func TestAutoScalerDetachedNotTerminatedInstances(t *testing.T) {
 		mock.Anything,
 		[]string{"detached"},
 	).Return(output, nil)
-	err := scaler.Scale(context.Background(), cfg)
+	err := scaler.Scale(t.Context(), cfg)
 	require.NoError(t, err)
 }
 
