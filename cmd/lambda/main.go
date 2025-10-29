@@ -7,7 +7,7 @@ import (
 
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/aws/aws-lambda-go/lambdacontext"
-	"github.com/aws/aws-xray-sdk-go/xray"
+	"github.com/aws/aws-xray-sdk-go/v2/xray"
 	"golang.org/x/exp/slog"
 
 	"github.com/spacelift-io/awsautoscalr/cmd/internal"
