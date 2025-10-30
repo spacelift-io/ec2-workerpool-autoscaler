@@ -2,29 +2,35 @@ package main
 
 import (
 	"context"
+	"log/slog"
 	"os"
 
-	"golang.org/x/exp/slog"
-
-	"github.com/aws/aws-xray-sdk-go/v2/xray"
 	cmdinternal "github.com/spacelift-io/awsautoscalr/cmd/internal"
+	"github.com/spacelift-io/awsautoscalr/internal/tracing"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/codes"
 )
 
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	ctx := context.Background()
 
-	if err := xray.Configure(xray.Config{ServiceVersion: "1.2.3"}); err != nil {
-		logger.With("msg", err.Error()).Error("could not configure X-Ray")
-		os.Exit(1)
-	}
+	tp := tracing.InitOtelXrayTracer(ctx, logger, false)
+	defer func(ctx context.Context) {
+		err := tp.Shutdown(ctx)
+		if err != nil {
+			logger.Error("error shutting down tracer provider", "error", err)
+		}
+	}(ctx)
 
-	ctx, segment := xray.BeginSegment(context.Background(), "autoscaling")
+	t := otel.Tracer("local")
+	ctx, span := t.Start(ctx, "autoscaling")
+	defer span.End()
 
 	if err := cmdinternal.Handle(ctx, logger); err != nil {
 		logger.With("msg", err.Error()).Error("could not handle request")
-		segment.Close(err)
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "")
 		os.Exit(1)
 	}
-
-	segment.Close(nil)
 }

@@ -1,3 +1,5 @@
+version: 2
+
 builds:
   - main: ./cmd/lambda
     env:
@@ -10,7 +12,7 @@ builds:
     binary: bootstrap
 
 archives:
-  - format: zip
+  - formats: [zip]
     name_template: '{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}'
 
 changelog:

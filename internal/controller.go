@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"sort"
 	"strings"
 
@@ -14,11 +15,14 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/aws/aws-sdk-go-v2/service/ssm"
-	"github.com/aws/aws-xray-sdk-go/v2/instrumentation/awsv2"
-	"github.com/aws/aws-xray-sdk-go/v2/xray"
 	"github.com/shurcooL/graphql"
 	spacelift "github.com/spacelift-io/spacectl/client"
 	"github.com/spacelift-io/spacectl/client/session"
+	"go.opentelemetry.io/contrib/instrumentation/github.com/aws/aws-sdk-go-v2/otelaws"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/spacelift-io/awsautoscalr/internal/ifaces"
 )
@@ -35,6 +39,9 @@ type Controller struct {
 	// Configuration.
 	AWSAutoscalingGroupName string
 	SpaceliftWorkerPoolID   string
+
+	// Telemetry.
+	Tracer trace.Tracer
 }
 
 // NewController creates a new controller instance.
@@ -44,18 +51,14 @@ func NewController(ctx context.Context, cfg *RuntimeConfig) (*Controller, error)
 		return nil, fmt.Errorf("could not load AWS configuration: %w", err)
 	}
 
-	awsv2.AWSV2Instrumentor(&awsConfig.APIOptions)
+	otelaws.AppendMiddlewares(&awsConfig.APIOptions)
 
 	ssmClient := ssm.NewFromConfig(awsConfig)
 	var output *ssm.GetParameterOutput
 
-	xray.Capture(ctx, "aws.ssm.secret", func(ctx context.Context) error {
-		output, err = ssmClient.GetParameter(ctx, &ssm.GetParameterInput{
-			Name:           aws.String(cfg.SpaceliftAPISecretName),
-			WithDecryption: aws.Bool(true),
-		})
-
-		return err
+	output, err = ssmClient.GetParameter(ctx, &ssm.GetParameterInput{
+		Name:           aws.String(cfg.SpaceliftAPISecretName),
+		WithDecryption: aws.Bool(true),
 	})
 
 	if err != nil {
@@ -66,18 +69,20 @@ func NewController(ctx context.Context, cfg *RuntimeConfig) (*Controller, error)
 		return nil, errors.New("could not find Spacelift API key secret value in SSM")
 	}
 
-	var slSession session.Session
-	httpClient := xray.Client(nil)
+	httpClient := &http.Client{
+		Transport: otelhttp.NewTransport(
+			http.DefaultTransport,
+			otelhttp.WithSpanNameFormatter(func(operation string, r *http.Request) string {
+				return r.Host
+			}),
+		),
+	}
 
-	xray.Capture(ctx, "spacelift.session.get", func(ctx context.Context) error {
-		slSession, err = session.FromAPIKey(ctx, httpClient)(
-			cfg.SpaceliftAPIEndpoint,
-			cfg.SpaceliftAPIKeyID,
-			*output.Parameter.Value,
-		)
-
-		return err
-	})
+	slSession, err := session.FromAPIKey(ctx, httpClient)(
+		cfg.SpaceliftAPIEndpoint,
+		cfg.SpaceliftAPIKeyID,
+		*output.Parameter.Value,
+	)
 
 	if err != nil {
 		return nil, fmt.Errorf("could not create Spacelift session: %w", err)
@@ -94,44 +99,44 @@ func NewController(ctx context.Context, cfg *RuntimeConfig) (*Controller, error)
 		Spacelift:               spacelift.New(httpClient, slSession),
 		AWSAutoscalingGroupName: arnParts[1],
 		SpaceliftWorkerPoolID:   cfg.SpaceliftWorkerPoolID,
+		Tracer:                  otel.Tracer("github.com/spacelift-io/awsautoscalr/internal/controller"),
 	}, nil
 }
 
 // DescribeInstances returns the details of the given instances from AWS,
 // making sure that the instances are valid for further processing.
 func (c *Controller) DescribeInstances(ctx context.Context, instanceIDs []string) (instances []ec2types.Instance, err error) {
-	xray.Capture(ctx, "aws.ec2.describeInstances", func(ctx context.Context) error {
-		var output *ec2.DescribeInstancesOutput
+	ctx, span := c.Tracer.Start(ctx, "aws.ec2.describeInstances")
+	defer span.End()
 
-		output, err = c.EC2.DescribeInstances(ctx, &ec2.DescribeInstancesInput{
-			InstanceIds: instanceIDs,
-		})
+	var output *ec2.DescribeInstancesOutput
 
-		if err != nil {
-			err = fmt.Errorf("could not describe instances: %w", err)
-			return err
-		}
-
-		for _, reservation := range output.Reservations {
-			for _, instance := range reservation.Instances {
-				if instance.InstanceId == nil {
-					err = errors.New("could not find instance ID")
-					return err
-				}
-
-				if instance.LaunchTime == nil {
-					err = fmt.Errorf("could not find launch time for instance %s", *instance.InstanceId)
-					return err
-				}
-
-				instances = append(instances, instance)
-			}
-		}
-
-		return nil
+	output, err = c.EC2.DescribeInstances(ctx, &ec2.DescribeInstancesInput{
+		InstanceIds: instanceIDs,
 	})
 
-	return instances, err
+	if err != nil {
+		err = fmt.Errorf("could not describe instances: %w", err)
+		return nil, err
+	}
+
+	for _, reservation := range output.Reservations {
+		for _, instance := range reservation.Instances {
+			if instance.InstanceId == nil {
+				err = errors.New("could not find instance ID")
+				return nil, err
+			}
+
+			if instance.LaunchTime == nil {
+				err = fmt.Errorf("could not find launch time for instance %s", *instance.InstanceId)
+				return nil, err
+			}
+
+			instances = append(instances, instance)
+		}
+	}
+
+	return instances, nil
 }
 
 // GetAutoscalingGroup returns the autoscaling group details from AWS.
@@ -139,197 +144,178 @@ func (c *Controller) DescribeInstances(ctx context.Context, instanceIDs []string
 // It makes sure that the autoscaling group exists and that there is only
 // one autoscaling group with the given name.
 func (c *Controller) GetAutoscalingGroup(ctx context.Context) (out *autoscalingtypes.AutoScalingGroup, err error) {
-	xray.Capture(ctx, "aws.asg.get", func(ctx context.Context) error {
-		var output *autoscaling.DescribeAutoScalingGroupsOutput
+	ctx, span := c.Tracer.Start(ctx, "aws.asg.get")
+	defer span.End()
 
-		output, err = c.Autoscaling.DescribeAutoScalingGroups(ctx, &autoscaling.DescribeAutoScalingGroupsInput{
-			AutoScalingGroupNames: []string{c.AWSAutoscalingGroupName},
-		})
+	var output *autoscaling.DescribeAutoScalingGroupsOutput
 
-		if err != nil {
-			err = fmt.Errorf("could not get autoscaling group details: %w", err)
-			return err
-		}
-
-		if len(output.AutoScalingGroups) == 0 {
-			err = fmt.Errorf("could not find autoscaling group %s", c.AWSAutoscalingGroupName)
-			return err
-		} else if len(output.AutoScalingGroups) > 1 {
-			err = fmt.Errorf("found more than one autoscaling group with name %s", c.AWSAutoscalingGroupName)
-			return err
-		}
-
-		out = &output.AutoScalingGroups[0]
-
-		return nil
+	output, err = c.Autoscaling.DescribeAutoScalingGroups(ctx, &autoscaling.DescribeAutoScalingGroupsInput{
+		AutoScalingGroupNames: []string{c.AWSAutoscalingGroupName},
 	})
 
-	return
+	if err != nil {
+		err = fmt.Errorf("could not get autoscaling group details: %w", err)
+		return nil, err
+	}
+
+	if len(output.AutoScalingGroups) == 0 {
+		err = fmt.Errorf("could not find autoscaling group %s", c.AWSAutoscalingGroupName)
+		return nil, err
+	} else if len(output.AutoScalingGroups) > 1 {
+		err = fmt.Errorf("found more than one autoscaling group with name %s", c.AWSAutoscalingGroupName)
+		return nil, err
+	}
+
+	out = &output.AutoScalingGroups[0]
+
+	return out, nil
 }
 
 // GetWorkerPool returns the worker pool details from Spacelift.
 func (c *Controller) GetWorkerPool(ctx context.Context) (out *WorkerPool, err error) {
-	xray.Capture(ctx, "spacelift.workerpool.get", func(ctx context.Context) error {
-		var wpDetails WorkerPoolDetails
+	ctx, span := c.Tracer.Start(ctx, "spacelift.workerpool.get")
+	defer span.End()
 
-		if err = c.Spacelift.Query(ctx, &wpDetails, map[string]any{"workerPool": c.SpaceliftWorkerPoolID}); err != nil {
-			err = fmt.Errorf("could not get Spacelift worker pool details: %w", err)
-			return err
+	var wpDetails WorkerPoolDetails
+
+	if err = c.Spacelift.Query(ctx, &wpDetails, map[string]any{"workerPool": c.SpaceliftWorkerPoolID}); err != nil {
+		err = fmt.Errorf("could not get Spacelift worker pool details: %w", err)
+		return nil, err
+	}
+
+	if wpDetails.Pool == nil {
+		err = errors.New("worker pool not found or not accessible")
+		return nil, err
+	}
+
+	worker_index := 0
+	for _, worker := range wpDetails.Pool.Workers {
+		if !worker.Drained {
+			wpDetails.Pool.Workers[worker_index] = worker
+			worker_index++
 		}
+	}
+	wpDetails.Pool.Workers = wpDetails.Pool.Workers[:worker_index]
 
-		if wpDetails.Pool == nil {
-			err = errors.New("worker pool not found or not accessible")
-			return err
-		}
-
-		// Remove any drained workers from the list of workers in the pool.
-		// These don't count towards the "available workers", so they shouldn't
-		// be included when making a scaling decision.
-		worker_index := 0
-		for _, worker := range wpDetails.Pool.Workers {
-			if !worker.Drained {
-				wpDetails.Pool.Workers[worker_index] = worker
-				worker_index++
-			}
-		}
-		wpDetails.Pool.Workers = wpDetails.Pool.Workers[:worker_index]
-
-		// Let's sort the workers by their creation time. This is important
-		// because Spacelift will always prioritize the newest workers for new runs,
-		// so operating on the oldest ones first is going to be the safest.
-		//
-		// The backend should already return the workers in the order of their
-		// creation, but let's be extra safe and not rely on that.
-		sort.Slice(wpDetails.Pool.Workers, func(i, j int) bool {
-			return wpDetails.Pool.Workers[i].CreatedAt < wpDetails.Pool.Workers[j].CreatedAt
-		})
-
-		xray.AddMetadata(ctx, "workers", len(wpDetails.Pool.Workers))
-		xray.AddMetadata(ctx, "pending_runs", wpDetails.Pool.PendingRuns)
-
-		out = wpDetails.Pool
-
-		return nil
+	sort.Slice(wpDetails.Pool.Workers, func(i, j int) bool {
+		return wpDetails.Pool.Workers[i].CreatedAt < wpDetails.Pool.Workers[j].CreatedAt
 	})
 
-	return
+	span.SetAttributes(
+		attribute.Int("workers", len(wpDetails.Pool.Workers)),
+		attribute.Int("pending_runs", int(wpDetails.Pool.PendingRuns)),
+	)
+
+	out = wpDetails.Pool
+
+	return out, nil
 }
 
 // Drain worker drains a worker in the Spacelift worker pool.
 func (c *Controller) DrainWorker(ctx context.Context, workerID string) (drained bool, err error) {
-	xray.Capture(ctx, "spacelift.worker.drain", func(ctx context.Context) error {
-		xray.AddAnnotation(ctx, "worker_id", workerID)
+	ctx, span := c.Tracer.Start(ctx, "spacelift.worker.drain")
+	defer span.End()
 
-		var worker *Worker
+	span.SetAttributes(attribute.String("worker_id", workerID))
 
-		if worker, err = c.workerDrainSet(ctx, workerID, true); err != nil {
-			err = fmt.Errorf("could not drain worker: %w", err)
-			return err
-		}
+	var worker *Worker
 
-		xray.AddMetadata(ctx, "worker_id", worker.ID)
-		xray.AddMetadata(ctx, "worker_busy", worker.Busy)
-		xray.AddMetadata(ctx, "worker_drained", worker.Drained)
+	if worker, err = c.workerDrainSet(ctx, workerID, true); err != nil {
+		err = fmt.Errorf("could not drain worker: %w", err)
+		return false, err
+	}
 
-		// If the worker is not busy, our job here is done.
-		if !worker.Busy {
-			drained = true
-			return nil
-		}
+	span.SetAttributes(
+		attribute.String("worker.id", worker.ID),
+		attribute.Bool("worker.busy", worker.Busy),
+		attribute.Bool("worker.drained", worker.Drained),
+	)
 
-		if _, err = c.workerDrainSet(ctx, workerID, false); err != nil {
-			err = fmt.Errorf("could not undrain a busy worker: %w", err)
-			return err
-		}
+	if !worker.Busy {
+		drained = true
+		return true, nil
+	}
 
-		return nil
-	})
+	if _, err = c.workerDrainSet(ctx, workerID, false); err != nil {
+		err = fmt.Errorf("could not undrain a busy worker: %w", err)
+		return false, err
+	}
 
-	return
+	return false, nil
 }
 
 func (c *Controller) KillInstance(ctx context.Context, instanceID string) (err error) {
-	xray.Capture(ctx, "aws.killinstance", func(ctx context.Context) error {
-		xray.AddAnnotation(ctx, "instance_id", instanceID)
+	ctx, span := c.Tracer.Start(ctx, "aws.killinstance")
+	defer span.End()
 
-		_, err = c.Autoscaling.DetachInstances(ctx, &autoscaling.DetachInstancesInput{
-			AutoScalingGroupName:           aws.String(c.AWSAutoscalingGroupName),
-			InstanceIds:                    []string{instanceID},
-			ShouldDecrementDesiredCapacity: aws.Bool(true),
-		})
+	span.SetAttributes(attribute.String("instance_id", instanceID))
 
-		// A special instance of the error is when the instance is not part of
-		// the autoscaling group. This can happen when the instance successfully
-		// detached but for some reason the termination request failed.
-		//
-		// This will fix one-off errors and machines manually connected to the
-		// worker pool (as long as they terminate upon request), but if there
-		// are multiple ASGs connected to the same worker pool, this will be a
-		// common occurrence and will break the entire autoscaling logic.
-		if err != nil && !strings.Contains(err.Error(), "is not part of Auto Scaling group") {
-			err = fmt.Errorf("could not detach instance from autoscaling group: %v", err)
-			return err
-		}
-
-		// Now that the instance is detached from the ASG (or was never part of
-		// the ASG), we can terminate it.
-		_, err = c.EC2.TerminateInstances(ctx, &ec2.TerminateInstancesInput{
-			InstanceIds: []string{instanceID},
-		})
-
-		if err != nil {
-			err = fmt.Errorf("could not terminate detached instance: %v", err)
-			return err
-		}
-
-		return nil
+	_, err = c.Autoscaling.DetachInstances(ctx, &autoscaling.DetachInstancesInput{
+		AutoScalingGroupName:           aws.String(c.AWSAutoscalingGroupName),
+		InstanceIds:                    []string{instanceID},
+		ShouldDecrementDesiredCapacity: aws.Bool(true),
 	})
 
-	return
+	if err != nil && !strings.Contains(err.Error(), "is not part of Auto Scaling group") {
+		err = fmt.Errorf("could not detach instance from autoscaling group: %v", err)
+		return err
+	}
+
+	_, err = c.EC2.TerminateInstances(ctx, &ec2.TerminateInstancesInput{
+		InstanceIds: []string{instanceID},
+	})
+
+	if err != nil {
+		err = fmt.Errorf("could not terminate detached instance: %v", err)
+		return err
+	}
+
+	return nil
 }
 
 func (c *Controller) ScaleUpASG(ctx context.Context, desiredCapacity int32) (err error) {
-	xray.Capture(ctx, "aws.asg.scaleup", func(ctx context.Context) error {
-		xray.AddMetadata(ctx, "desired_capacity", desiredCapacity)
+	ctx, span := c.Tracer.Start(ctx, "aws.asg.scaleup")
+	defer span.End()
 
-		_, err = c.Autoscaling.SetDesiredCapacity(ctx, &autoscaling.SetDesiredCapacityInput{
-			AutoScalingGroupName: aws.String(c.AWSAutoscalingGroupName),
-			DesiredCapacity:      aws.Int32(int32(desiredCapacity)),
-		})
+	span.SetAttributes(attribute.Int("desired_capacity", int(desiredCapacity)))
 
-		if err != nil {
-			err = fmt.Errorf("could not set desired capacity: %v", err)
-			return err
-		}
-
-		return nil
+	_, err = c.Autoscaling.SetDesiredCapacity(ctx, &autoscaling.SetDesiredCapacityInput{
+		AutoScalingGroupName: aws.String(c.AWSAutoscalingGroupName),
+		DesiredCapacity:      aws.Int32(int32(desiredCapacity)),
 	})
 
-	return
+	if err != nil {
+		err = fmt.Errorf("could not set desired capacity: %v", err)
+		return err
+	}
+
+	return nil
 }
 
 func (c *Controller) workerDrainSet(ctx context.Context, workerID string, drain bool) (worker *Worker, err error) {
-	xray.Capture(ctx, fmt.Sprintf("spacelift.worker.setdrain.%t", drain), func(ctx context.Context) error {
-		xray.AddAnnotation(ctx, "worker_id", workerID)
-		xray.AddAnnotation(ctx, "worker_pool_id", c.SpaceliftWorkerPoolID)
-		xray.AddAnnotation(ctx, "drain", drain)
-		var mutation WorkerDrainSet
+	ctx, span := c.Tracer.Start(ctx, fmt.Sprintf("spacelift.worker.setdrain.%t", drain))
+	defer span.End()
 
-		variables := map[string]any{
-			"workerPoolId": graphql.ID(c.SpaceliftWorkerPoolID),
-			"workerId":     graphql.ID(workerID),
-			"drain":        graphql.Boolean(drain),
-		}
+	span.SetAttributes(
+		attribute.String("worker_id", workerID),
+		attribute.String("worker_pool_id", c.SpaceliftWorkerPoolID),
+		attribute.Bool("drain", drain),
+	)
 
-		if err = c.Spacelift.Mutate(ctx, &mutation, variables); err != nil {
-			err = fmt.Errorf("could not set worker drain to %t: %w", drain, err)
-			return err
-		}
+	var mutation WorkerDrainSet
 
-		worker = &mutation.Worker
+	variables := map[string]any{
+		"workerPoolId": graphql.ID(c.SpaceliftWorkerPoolID),
+		"workerId":     graphql.ID(workerID),
+		"drain":        graphql.Boolean(drain),
+	}
 
-		return nil
-	})
+	if err = c.Spacelift.Mutate(ctx, &mutation, variables); err != nil {
+		err = fmt.Errorf("could not set worker drain to %t: %w", drain, err)
+		return nil, err
+	}
 
-	return
+	worker = &mutation.Worker
+
+	return worker, nil
 }
