@@ -6,8 +6,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aws/aws-sdk-go-v2/service/autoscaling/types"
-	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
@@ -33,11 +31,11 @@ func TestAutoScalerScalingNone(t *testing.T) {
 			},
 		},
 	}, nil)
-	ctrl.On("GetAutoscalingGroup", mock.Anything).Return(&types.AutoScalingGroup{
-		AutoScalingGroupName: ptr("group"),
-		MinSize:              ptr(int32(1)),
-		MaxSize:              ptr(int32(3)),
-		DesiredCapacity:      ptr(int32(2)),
+	ctrl.On("GetAutoscalingGroup", mock.Anything).Return(&internal.AutoScalingGroup{
+		Name:            "group",
+		MinSize:         1,
+		MaxSize:         3,
+		DesiredCapacity: 2,
 	}, nil)
 	err := scaler.Scale(t.Context(), cfg)
 	require.NoError(t, err)
@@ -63,16 +61,16 @@ func TestAutoScalerScalingUp(t *testing.T) {
 		},
 		PendingRuns: 2,
 	}, nil)
-	ctrl.On("GetAutoscalingGroup", mock.Anything).Return(&types.AutoScalingGroup{
-		AutoScalingGroupName: ptr("group"),
-		MinSize:              ptr(int32(1)),
-		MaxSize:              ptr(int32(3)),
-		DesiredCapacity:      ptr(int32(2)),
-		Instances: []types.Instance{
-			{InstanceId: ptr("instance")},
+	ctrl.On("GetAutoscalingGroup", mock.Anything).Return(&internal.AutoScalingGroup{
+		Name:            "group",
+		MinSize:         1,
+		MaxSize:         3,
+		DesiredCapacity: 2,
+		Instances: []internal.Instance{
+			{ID: "instance"},
 		},
 	}, nil)
-	ctrl.On("ScaleUpASG", mock.Anything, int32(2)).Return(nil)
+	ctrl.On("ScaleUpASG", mock.Anything, 2).Return(nil)
 	err := scaler.Scale(t.Context(), cfg)
 	require.NoError(t, err)
 }
@@ -102,14 +100,14 @@ func TestAutoScalerScalingDown(t *testing.T) {
 			},
 		},
 	}, nil)
-	ctrl.On("GetAutoscalingGroup", mock.Anything).Return(&types.AutoScalingGroup{
-		AutoScalingGroupName: ptr("group"),
-		MinSize:              ptr(int32(1)),
-		MaxSize:              ptr(int32(3)),
-		DesiredCapacity:      ptr(int32(2)),
-		Instances: []types.Instance{
-			{InstanceId: ptr("instance")},
-			{InstanceId: ptr("instance2")},
+	ctrl.On("GetAutoscalingGroup", mock.Anything).Return(&internal.AutoScalingGroup{
+		Name:            "group",
+		MinSize:         1,
+		MaxSize:         3,
+		DesiredCapacity: 2,
+		Instances: []internal.Instance{
+			{ID: "instance"},
+			{ID: "instance2"},
 		},
 	}, nil)
 	ctrl.On("DrainWorker", mock.Anything, "1").Return(true, nil)
@@ -143,19 +141,19 @@ func TestAutoScalerDetachedNotTerminatedInstances(t *testing.T) {
 		},
 		PendingRuns: 2,
 	}, nil)
-	ctrl.On("GetAutoscalingGroup", mock.Anything).Return(&types.AutoScalingGroup{
-		AutoScalingGroupName: ptr("group"),
-		MinSize:              ptr(int32(1)),
-		MaxSize:              ptr(int32(3)),
-		DesiredCapacity:      ptr(int32(2)),
-		Instances: []types.Instance{
-			{InstanceId: ptr("instance")},
+	ctrl.On("GetAutoscalingGroup", mock.Anything).Return(&internal.AutoScalingGroup{
+		Name:            "group",
+		MinSize:         1,
+		MaxSize:         3,
+		DesiredCapacity: 2,
+		Instances: []internal.Instance{
+			{ID: "instance"},
 		},
 	}, nil)
 	ctrl.On("KillInstance", mock.Anything, "detached").Return(nil)
-	output := []ec2types.Instance{{
-		InstanceId: ptr("detached"),
-		LaunchTime: nullable(time.Now().Add(-time.Hour)),
+	output := []internal.Instance{{
+		ID:         "detached",
+		LaunchTime: time.Now().Add(-time.Hour),
 	}}
 	ctrl.On(
 		"DescribeInstances",
@@ -164,8 +162,4 @@ func TestAutoScalerDetachedNotTerminatedInstances(t *testing.T) {
 	).Return(output, nil)
 	err := scaler.Scale(t.Context(), cfg)
 	require.NoError(t, err)
-}
-
-func ptr[T any](v T) *T {
-	return &v
 }

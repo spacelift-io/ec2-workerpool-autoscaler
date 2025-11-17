@@ -25,7 +25,7 @@ const (
 	workerPoolID = "test-pool"
 )
 
-func setupController() (*internal.Controller, *ifaces.MockAutoscaling, *ifaces.MockEC2, *ifaces.MockSpacelift) {
+func setupController() (*internal.AWSController, *ifaces.MockAutoscaling, *ifaces.MockEC2, *ifaces.MockSpacelift) {
 	mockAutoscaling := &ifaces.MockAutoscaling{}
 	mockEC2 := &ifaces.MockEC2{}
 	mockSpacelift := &ifaces.MockSpacelift{}
@@ -35,13 +35,15 @@ func setupController() (*internal.Controller, *ifaces.MockAutoscaling, *ifaces.M
 	)
 	otel.SetTracerProvider(tp)
 
-	controller := &internal.Controller{
+	controller := &internal.AWSController{
+		Controller: internal.Controller{
+			Spacelift:             mockSpacelift,
+			SpaceliftWorkerPoolID: workerPoolID,
+			Tracer:                tp.Tracer("unittest"),
+		},
 		Autoscaling:             mockAutoscaling,
 		EC2:                     mockEC2,
-		Spacelift:               mockSpacelift,
 		AWSAutoscalingGroupName: asgName,
-		SpaceliftWorkerPoolID:   workerPoolID,
-		Tracer:                  tp.Tracer("unittest"),
 	}
 
 	return controller, mockAutoscaling, mockEC2, mockSpacelift

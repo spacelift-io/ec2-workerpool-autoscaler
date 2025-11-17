@@ -16,7 +16,7 @@ func Handle(ctx context.Context, logger *slog.Logger) error {
 		return fmt.Errorf("could not parse environment variables: %w", err)
 	}
 
-	controller, err := internal.NewController(ctx, &cfg)
+	controller, err := internal.NewAWSController(ctx, &cfg)
 	if err != nil {
 		return fmt.Errorf("could not create controller: %w", err)
 	}
