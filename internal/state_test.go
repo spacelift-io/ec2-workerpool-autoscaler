@@ -5,7 +5,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aws/aws-sdk-go-v2/service/autoscaling/types"
 	"github.com/stretchr/testify/require"
 
 	"github.com/spacelift-io/awsautoscalr/internal"
@@ -16,14 +15,14 @@ func TestState_StrayInstances(t *testing.T) {
 	const instanceID = "instance-id"
 	const failedToTerminateInstanceID = "instance-id2"
 	cfg := internal.RuntimeConfig{}
-	asg := &types.AutoScalingGroup{
-		AutoScalingGroupName: nullable(asgName),
-		MinSize:              nullable(int32(1)),
-		MaxSize:              nullable(int32(5)),
-		DesiredCapacity:      nullable(int32(3)),
-		Instances: []types.Instance{
+	asg := &internal.AutoScalingGroup{
+		Name:            asgName,
+		MinSize:         1,
+		MaxSize:         5,
+		DesiredCapacity: 3,
+		Instances: []internal.Instance{
 			{
-				InstanceId: nullable(instanceID),
+				ID: instanceID,
 			},
 		},
 	}
@@ -53,11 +52,11 @@ func TestState_StrayInstances(t *testing.T) {
 }
 
 func TestNewState_ASGNameNotSet_ReturnsError(t *testing.T) {
-	asg := &types.AutoScalingGroup{
-		AutoScalingGroupName: nil,
-		MinSize:              nullable(int32(1)),
-		MaxSize:              nullable(int32(5)),
-		DesiredCapacity:      nullable(int32(3)),
+	asg := &internal.AutoScalingGroup{
+		Name:            "",
+		MinSize:         1,
+		MaxSize:         5,
+		DesiredCapacity: 3,
 	}
 	workerPool := &internal.WorkerPool{}
 	cfg := internal.RuntimeConfig{}
@@ -68,11 +67,11 @@ func TestNewState_ASGNameNotSet_ReturnsError(t *testing.T) {
 }
 
 func TestNewState_ASGMinSizeNotSet_ReturnsError(t *testing.T) {
-	asg := &types.AutoScalingGroup{
-		AutoScalingGroupName: nullable("asg-name"),
-		MinSize:              nil,
-		MaxSize:              nullable(int32(5)),
-		DesiredCapacity:      nullable(int32(3)),
+	asg := &internal.AutoScalingGroup{
+		Name:            "asg-name",
+		MinSize:         -1,
+		MaxSize:         5,
+		DesiredCapacity: 3,
 	}
 	workerPool := &internal.WorkerPool{}
 	cfg := internal.RuntimeConfig{}
@@ -83,11 +82,11 @@ func TestNewState_ASGMinSizeNotSet_ReturnsError(t *testing.T) {
 }
 
 func TestNewState_ASGMaxSizeNotSet_ReturnsError(t *testing.T) {
-	asg := &types.AutoScalingGroup{
-		AutoScalingGroupName: nullable("asg-name"),
-		MinSize:              nullable(int32(1)),
-		MaxSize:              nil,
-		DesiredCapacity:      nullable(int32(3)),
+	asg := &internal.AutoScalingGroup{
+		Name:            "asg-name",
+		MinSize:         1,
+		MaxSize:         -1,
+		DesiredCapacity: 3,
 	}
 	workerPool := &internal.WorkerPool{}
 	cfg := internal.RuntimeConfig{}
@@ -98,11 +97,11 @@ func TestNewState_ASGMaxSizeNotSet_ReturnsError(t *testing.T) {
 }
 
 func TestNewState_ASGDesiredCapacityNotSet_ReturnsError(t *testing.T) {
-	asg := &types.AutoScalingGroup{
-		AutoScalingGroupName: nullable("asg-name"),
-		MinSize:              nullable(int32(1)),
-		MaxSize:              nullable(int32(5)),
-		DesiredCapacity:      nil,
+	asg := &internal.AutoScalingGroup{
+		Name:            "asg-name",
+		MinSize:         1,
+		MaxSize:         5,
+		DesiredCapacity: -1,
 	}
 	workerPool := &internal.WorkerPool{}
 	cfg := internal.RuntimeConfig{}
@@ -113,11 +112,11 @@ func TestNewState_ASGDesiredCapacityNotSet_ReturnsError(t *testing.T) {
 }
 
 func TestNewState_WorkerMissingMetadata_ReturnsError(t *testing.T) {
-	asg := &types.AutoScalingGroup{
-		AutoScalingGroupName: nullable("asg-name"),
-		MinSize:              nullable(int32(1)),
-		MaxSize:              nullable(int32(5)),
-		DesiredCapacity:      nullable(int32(3)),
+	asg := &internal.AutoScalingGroup{
+		Name:            "asg-name",
+		MinSize:         1,
+		MaxSize:         5,
+		DesiredCapacity: 3,
 	}
 	workerPool := &internal.WorkerPool{
 		Workers: []internal.Worker{{
@@ -134,11 +133,11 @@ func TestNewState_WorkerMissingMetadata_ReturnsError(t *testing.T) {
 }
 
 func TestNewState_WorkerEmptyASGID_ReturnsError(t *testing.T) {
-	asg := &types.AutoScalingGroup{
-		AutoScalingGroupName: nullable("asg-name"),
-		MinSize:              nullable(int32(1)),
-		MaxSize:              nullable(int32(5)),
-		DesiredCapacity:      nullable(int32(3)),
+	asg := &internal.AutoScalingGroup{
+		Name:            "asg-name",
+		MinSize:         1,
+		MaxSize:         5,
+		DesiredCapacity: 3,
 	}
 	workerPool := &internal.WorkerPool{
 		Workers: []internal.Worker{{
@@ -157,11 +156,11 @@ func TestNewState_WorkerEmptyASGID_ReturnsError(t *testing.T) {
 }
 
 func TestNewState_WorkerIncorrectASG_ReturnsError(t *testing.T) {
-	asg := &types.AutoScalingGroup{
-		AutoScalingGroupName: nullable("asg-name"),
-		MinSize:              nullable(int32(1)),
-		MaxSize:              nullable(int32(5)),
-		DesiredCapacity:      nullable(int32(3)),
+	asg := &internal.AutoScalingGroup{
+		Name:            "asg-name",
+		MinSize:         1,
+		MaxSize:         5,
+		DesiredCapacity: 3,
 	}
 	workerPool := &internal.WorkerPool{
 		Workers: []internal.Worker{{
@@ -183,14 +182,14 @@ func TestStrayInstances_NoWorkers_InstanceInService_ReturnsStrayInstance(t *test
 	const asgName = "asg-name"
 	const instanceID = "i-1234567890"
 
-	asg := &types.AutoScalingGroup{
-		AutoScalingGroupName: nullable(asgName),
-		MinSize:              nullable(int32(1)),
-		MaxSize:              nullable(int32(5)),
-		DesiredCapacity:      nullable(int32(3)),
-		Instances: []types.Instance{{
-			InstanceId:     nullable(instanceID),
-			LifecycleState: types.LifecycleStateInService,
+	asg := &internal.AutoScalingGroup{
+		Name:            asgName,
+		MinSize:         1,
+		MaxSize:         5,
+		DesiredCapacity: 3,
+		Instances: []internal.Instance{{
+			ID:             instanceID,
+			LifecycleState: internal.LifecycleStateInService,
 		}},
 	}
 	workerPool := &internal.WorkerPool{}
@@ -208,14 +207,14 @@ func TestStrayInstances_NoWorkers_InstanceNotInService_ReturnsEmpty(t *testing.T
 	const asgName = "asg-name"
 	const instanceID = "i-1234567890"
 
-	asg := &types.AutoScalingGroup{
-		AutoScalingGroupName: nullable(asgName),
-		MinSize:              nullable(int32(1)),
-		MaxSize:              nullable(int32(5)),
-		DesiredCapacity:      nullable(int32(3)),
-		Instances: []types.Instance{{
-			InstanceId:     nullable(instanceID),
-			LifecycleState: types.LifecycleStateTerminating,
+	asg := &internal.AutoScalingGroup{
+		Name:            asgName,
+		MinSize:         1,
+		MaxSize:         5,
+		DesiredCapacity: 3,
+		Instances: []internal.Instance{{
+			ID:             instanceID,
+			LifecycleState: internal.LifecycleStateTerminating,
 		}},
 	}
 	workerPool := &internal.WorkerPool{}
@@ -233,14 +232,14 @@ func TestStrayInstances_WorkerMatchesInstance_ReturnsEmpty(t *testing.T) {
 	const asgName = "asg-name"
 	const instanceID = "i-1234567890"
 
-	asg := &types.AutoScalingGroup{
-		AutoScalingGroupName: nullable(asgName),
-		MinSize:              nullable(int32(1)),
-		MaxSize:              nullable(int32(5)),
-		DesiredCapacity:      nullable(int32(3)),
-		Instances: []types.Instance{{
-			InstanceId:     nullable(instanceID),
-			LifecycleState: types.LifecycleStateInService,
+	asg := &internal.AutoScalingGroup{
+		Name:            asgName,
+		MinSize:         1,
+		MaxSize:         5,
+		DesiredCapacity: 3,
+		Instances: []internal.Instance{{
+			ID:             instanceID,
+			LifecycleState: internal.LifecycleStateInService,
 		}},
 	}
 	workerPool := &internal.WorkerPool{
@@ -265,14 +264,14 @@ func TestStrayInstances_WorkerDoesNotMatchInstance_ReturnsStrayInstance(t *testi
 	const asgName = "asg-name"
 	const instanceID = "i-1234567890"
 
-	asg := &types.AutoScalingGroup{
-		AutoScalingGroupName: nullable(asgName),
-		MinSize:              nullable(int32(1)),
-		MaxSize:              nullable(int32(5)),
-		DesiredCapacity:      nullable(int32(3)),
-		Instances: []types.Instance{{
-			InstanceId:     nullable(instanceID),
-			LifecycleState: types.LifecycleStateInService,
+	asg := &internal.AutoScalingGroup{
+		Name:            asgName,
+		MinSize:         1,
+		MaxSize:         5,
+		DesiredCapacity: 3,
+		Instances: []internal.Instance{{
+			ID:             instanceID,
+			LifecycleState: internal.LifecycleStateInService,
 		}},
 	}
 	workerPool := &internal.WorkerPool{
@@ -294,11 +293,11 @@ func TestStrayInstances_WorkerDoesNotMatchInstance_ReturnsStrayInstance(t *testi
 }
 
 func TestScalableWorkers_ReturnsIdleWorkers(t *testing.T) {
-	asg := &types.AutoScalingGroup{
-		AutoScalingGroupName: nullable("asg-name"),
-		MinSize:              nullable(int32(1)),
-		MaxSize:              nullable(int32(5)),
-		DesiredCapacity:      nullable(int32(3)),
+	asg := &internal.AutoScalingGroup{
+		Name:            "asg-name",
+		MinSize:         1,
+		MaxSize:         5,
+		DesiredCapacity: 3,
 	}
 	workerPool := &internal.WorkerPool{
 		Workers: []internal.Worker{
@@ -332,11 +331,11 @@ func TestScalableWorkers_ReturnsIdleWorkers(t *testing.T) {
 }
 
 func TestDecide_NoWorkersNoPendingRunsNoInstances_NoScaling(t *testing.T) {
-	asg := &types.AutoScalingGroup{
-		AutoScalingGroupName: nullable("asg-name"),
-		MinSize:              nullable(int32(1)),
-		MaxSize:              nullable(int32(2)),
-		DesiredCapacity:      nullable(int32(2)),
+	asg := &internal.AutoScalingGroup{
+		Name:            "asg-name",
+		MinSize:         1,
+		MaxSize:         2,
+		DesiredCapacity: 2,
 	}
 	workerPool := &internal.WorkerPool{}
 	cfg := internal.RuntimeConfig{
@@ -354,12 +353,12 @@ func TestDecide_NoWorkersNoPendingRunsNoInstances_NoScaling(t *testing.T) {
 }
 
 func TestDecide_NoWorkersNoPendingRunsWithInstances_NoScalingNotInBalance(t *testing.T) {
-	asg := &types.AutoScalingGroup{
-		AutoScalingGroupName: nullable("asg-name"),
-		MinSize:              nullable(int32(1)),
-		MaxSize:              nullable(int32(2)),
-		DesiredCapacity:      nullable(int32(2)),
-		Instances:            []types.Instance{{}},
+	asg := &internal.AutoScalingGroup{
+		Name:            "asg-name",
+		MinSize:         1,
+		MaxSize:         2,
+		DesiredCapacity: 2,
+		Instances:       []internal.Instance{{}},
 	}
 	workerPool := &internal.WorkerPool{}
 	cfg := internal.RuntimeConfig{
@@ -377,12 +376,12 @@ func TestDecide_NoWorkersNoPendingRunsWithInstances_NoScalingNotInBalance(t *tes
 }
 
 func TestDecide_NoWorkersPendingRunsAtMaxSize_NoScaling(t *testing.T) {
-	asg := &types.AutoScalingGroup{
-		AutoScalingGroupName: nullable("asg-name"),
-		MinSize:              nullable(int32(1)),
-		MaxSize:              nullable(int32(2)),
-		DesiredCapacity:      nullable(int32(2)),
-		Instances:            []types.Instance{{}, {}},
+	asg := &internal.AutoScalingGroup{
+		Name:            "asg-name",
+		MinSize:         1,
+		MaxSize:         2,
+		DesiredCapacity: 2,
+		Instances:       []internal.Instance{{}, {}},
 	}
 	workerPool := &internal.WorkerPool{
 		PendingRuns: 5,
@@ -406,11 +405,11 @@ func TestDecide_NoWorkersPendingRunsAtMaxSize_NoScaling(t *testing.T) {
 }
 
 func TestDecide_PendingRunsConstrainedByMaxCreate_ScalesUpBy1(t *testing.T) {
-	asg := &types.AutoScalingGroup{
-		AutoScalingGroupName: nullable("asg-name"),
-		MinSize:              nullable(int32(1)),
-		MaxSize:              nullable(int32(2)),
-		DesiredCapacity:      nullable(int32(0)),
+	asg := &internal.AutoScalingGroup{
+		Name:            "asg-name",
+		MinSize:         1,
+		MaxSize:         2,
+		DesiredCapacity: 0,
 	}
 	workerPool := &internal.WorkerPool{
 		PendingRuns: 5,
@@ -433,11 +432,11 @@ func TestDecide_PendingRunsConstrainedByMaxCreate_ScalesUpBy1(t *testing.T) {
 }
 
 func TestDecide_PendingRunsNotConstrainedByMaxCreateOrASGSize_ScalesUpBy5(t *testing.T) {
-	asg := &types.AutoScalingGroup{
-		AutoScalingGroupName: nullable("asg-name"),
-		MinSize:              nullable(int32(1)),
-		MaxSize:              nullable(int32(10)),
-		DesiredCapacity:      nullable(int32(0)),
+	asg := &internal.AutoScalingGroup{
+		Name:            "asg-name",
+		MinSize:         1,
+		MaxSize:         10,
+		DesiredCapacity: 0,
 	}
 	workerPool := &internal.WorkerPool{
 		PendingRuns: 5,
@@ -457,11 +456,11 @@ func TestDecide_PendingRunsNotConstrainedByMaxCreateOrASGSize_ScalesUpBy5(t *tes
 }
 
 func TestDecide_PendingRunsConstrainedByMaxASGSize_ScalesUpBy2(t *testing.T) {
-	asg := &types.AutoScalingGroup{
-		AutoScalingGroupName: nullable("asg-name"),
-		MinSize:              nullable(int32(1)),
-		MaxSize:              nullable(int32(2)),
-		DesiredCapacity:      nullable(int32(0)),
+	asg := &internal.AutoScalingGroup{
+		Name:            "asg-name",
+		MinSize:         1,
+		MaxSize:         2,
+		DesiredCapacity: 0,
 	}
 	workerPool := &internal.WorkerPool{
 		PendingRuns: 5,
@@ -481,12 +480,12 @@ func TestDecide_PendingRunsConstrainedByMaxASGSize_ScalesUpBy2(t *testing.T) {
 }
 
 func TestDecide_NoPendingRunsAtMinSize_NoScaling(t *testing.T) {
-	asg := &types.AutoScalingGroup{
-		AutoScalingGroupName: nullable("asg-name"),
-		MinSize:              nullable(int32(2)),
-		MaxSize:              nullable(int32(10)),
-		DesiredCapacity:      nullable(int32(2)),
-		Instances:            []types.Instance{{}, {}},
+	asg := &internal.AutoScalingGroup{
+		Name:            "asg-name",
+		MinSize:         2,
+		MaxSize:         10,
+		DesiredCapacity: 2,
+		Instances:       []internal.Instance{{}, {}},
 	}
 	workerPool := &internal.WorkerPool{
 		Workers: []internal.Worker{
@@ -509,12 +508,12 @@ func TestDecide_NoPendingRunsAtMinSize_NoScaling(t *testing.T) {
 }
 
 func TestDecide_NoPendingRunsConstrainedByMaxKill_ScalesDownBy1(t *testing.T) {
-	asg := &types.AutoScalingGroup{
-		AutoScalingGroupName: nullable("asg-name"),
-		MinSize:              nullable(int32(0)),
-		MaxSize:              nullable(int32(10)),
-		DesiredCapacity:      nullable(int32(2)),
-		Instances:            []types.Instance{{}, {}},
+	asg := &internal.AutoScalingGroup{
+		Name:            "asg-name",
+		MinSize:         0,
+		MaxSize:         10,
+		DesiredCapacity: 2,
+		Instances:       []internal.Instance{{}, {}},
 	}
 	workerPool := &internal.WorkerPool{
 		Workers: []internal.Worker{
@@ -540,12 +539,12 @@ func TestDecide_NoPendingRunsConstrainedByMaxKill_ScalesDownBy1(t *testing.T) {
 }
 
 func TestDecide_NoPendingRunsConstrainedByMinASGSize_ScalesDownBy1(t *testing.T) {
-	asg := &types.AutoScalingGroup{
-		AutoScalingGroupName: nullable("asg-name"),
-		MinSize:              nullable(int32(1)),
-		MaxSize:              nullable(int32(10)),
-		DesiredCapacity:      nullable(int32(2)),
-		Instances:            []types.Instance{{}, {}},
+	asg := &internal.AutoScalingGroup{
+		Name:            "asg-name",
+		MinSize:         1,
+		MaxSize:         10,
+		DesiredCapacity: 2,
+		Instances:       []internal.Instance{{}, {}},
 	}
 	workerPool := &internal.WorkerPool{
 		Workers: []internal.Worker{
@@ -571,12 +570,12 @@ func TestDecide_NoPendingRunsConstrainedByMinASGSize_ScalesDownBy1(t *testing.T)
 }
 
 func TestDecide_NoPendingRunsNotConstrainedByMinASGSize_ScalesDownBy2(t *testing.T) {
-	asg := &types.AutoScalingGroup{
-		AutoScalingGroupName: nullable("asg-name"),
-		MinSize:              nullable(int32(0)),
-		MaxSize:              nullable(int32(10)),
-		DesiredCapacity:      nullable(int32(2)),
-		Instances:            []types.Instance{{}, {}},
+	asg := &internal.AutoScalingGroup{
+		Name:            "asg-name",
+		MinSize:         0,
+		MaxSize:         10,
+		DesiredCapacity: 2,
+		Instances:       []internal.Instance{{}, {}},
 	}
 	workerPool := &internal.WorkerPool{
 		Workers: []internal.Worker{
@@ -599,12 +598,12 @@ func TestDecide_NoPendingRunsNotConstrainedByMinASGSize_ScalesDownBy2(t *testing
 }
 
 func TestDecide_WaitingForIdleWorkers_NoScaling(t *testing.T) {
-	asg := &types.AutoScalingGroup{
-		AutoScalingGroupName: nullable("asg-name"),
-		MinSize:              nullable(int32(0)),
-		MaxSize:              nullable(int32(10)),
-		DesiredCapacity:      nullable(int32(2)),
-		Instances:            []types.Instance{{}, {}},
+	asg := &internal.AutoScalingGroup{
+		Name:            "asg-name",
+		MinSize:         0,
+		MaxSize:         10,
+		DesiredCapacity: 2,
+		Instances:       []internal.Instance{{}, {}},
 	}
 	workerPool := &internal.WorkerPool{
 		Workers: []internal.Worker{

@@ -12,3 +12,7 @@ type RuntimeConfig struct {
 	AutoscalingMaxKill        int    `env:"AUTOSCALING_MAX_KILL" envDefault:"1"`
 	AutoscalingMaxCreate      int    `env:"AUTOSCALING_MAX_CREATE" envDefault:"1"`
 }
+
+func (r RuntimeConfig) GroupKeyAndID() (string, string) {
+	return "asg_arn", r.AutoscalingGroupARN
+}

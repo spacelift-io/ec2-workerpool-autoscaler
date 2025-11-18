@@ -2,40 +2,42 @@ package internal
 
 import (
 	"fmt"
-	"github.com/aws/aws-sdk-go-v2/service/autoscaling/types"
 	"time"
 )
+
+const LifecycleStateInService = "InService"
+const LifecycleStateTerminating = "Terminating"
 
 // State represents the state of the world, as far as the autoscaler is
 // concerned. It takes into account the current state of the worker pool, and
 // the current state of the autoscaling group.
 type State struct {
 	WorkerPool *WorkerPool
-	ASG        *types.AutoScalingGroup
+	ASG        *AutoScalingGroup
 
 	inServiceInstanceIDs map[InstanceID]struct{}
 	workersByInstanceID  map[InstanceID]Worker
 	cfg                  RuntimeConfig
 }
 
-func NewState(workerPool *WorkerPool, asg *types.AutoScalingGroup, cfg RuntimeConfig) (*State, error) {
+func NewState(workerPool *WorkerPool, asg *AutoScalingGroup, cfg RuntimeConfig) (*State, error) {
 	workersByInstanceID := make(map[InstanceID]Worker)
 	inServiceInstanceIDs := make(map[InstanceID]struct{})
 
 	// Validate the ASG.
-	if asg.AutoScalingGroupName == nil {
+	if asg.Name == "" {
 		return nil, fmt.Errorf("ASG name is not set")
 	}
 
-	if asg.MinSize == nil {
+	if asg.MinSize < 0 {
 		return nil, fmt.Errorf("ASG minimum size is not set")
 	}
 
-	if asg.MaxSize == nil {
+	if asg.MaxSize < 0 {
 		return nil, fmt.Errorf("ASG maximum size is not set")
 	}
 
-	if asg.DesiredCapacity == nil {
+	if asg.DesiredCapacity < 0 {
 		return nil, fmt.Errorf("ASG desired capacity is not set")
 	}
 
@@ -50,19 +52,19 @@ func NewState(workerPool *WorkerPool, asg *types.AutoScalingGroup, cfg RuntimeCo
 			return nil, fmt.Errorf("worker %s has empty ASG ID in metadata", worker.ID)
 		}
 
-		if string(groupID) != *asg.AutoScalingGroupName {
-			return nil, fmt.Errorf("worker %s has incorrect ASG: %s (expected: %s)", worker.ID, groupID, *asg.AutoScalingGroupName)
+		if string(groupID) != asg.Name {
+			return nil, fmt.Errorf("worker %s has incorrect ASG: %s (expected: %s)", worker.ID, groupID, asg.Name)
 		}
 
 		workersByInstanceID[instanceID] = worker
 	}
 
 	for _, instance := range asg.Instances {
-		if instance.LifecycleState != types.LifecycleStateInService {
+		if instance.LifecycleState != LifecycleStateInService {
 			continue
 		}
 
-		inServiceInstanceIDs[InstanceID(*instance.InstanceId)] = struct{}{}
+		inServiceInstanceIDs[InstanceID(instance.ID)] = struct{}{}
 	}
 
 	return &State{
@@ -116,7 +118,7 @@ func (s *State) StrayInstances() []string {
 func (s *State) detachedNotTerminatedInstances() []string {
 	instanceIDs := make(map[InstanceID]struct{})
 	for _, instance := range s.ASG.Instances {
-		instanceIDs[InstanceID(*instance.InstanceId)] = struct{}{}
+		instanceIDs[InstanceID(instance.ID)] = struct{}{}
 	}
 
 	var res []string
@@ -160,7 +162,7 @@ func (s *State) Decide(maxCreate, maxKill int) Decision {
 }
 
 func (s *State) determineScaleUp(missingWorkers, maxCreate int) Decision {
-	if len(s.WorkerPool.Workers) >= int(*s.ASG.MaxSize) {
+	if len(s.WorkerPool.Workers) >= s.ASG.MaxSize {
 		return Decision{
 			ScalingDirection: ScalingDirectionNone,
 			Comments:         []string{"autoscaling group is already at maximum size"},
@@ -174,9 +176,9 @@ func (s *State) determineScaleUp(missingWorkers, maxCreate int) Decision {
 		missingWorkers = maxCreate
 	}
 
-	newASGCapacity := *s.ASG.DesiredCapacity + int32(missingWorkers)
+	newASGCapacity := s.ASG.DesiredCapacity + missingWorkers
 
-	if newASGCapacity <= *s.ASG.MaxSize {
+	if newASGCapacity <= s.ASG.MaxSize {
 		return Decision{
 			ScalingDirection: ScalingDirectionUp,
 			ScalingSize:      missingWorkers,
@@ -184,7 +186,7 @@ func (s *State) determineScaleUp(missingWorkers, maxCreate int) Decision {
 		}
 	}
 
-	scalingSize := int(*s.ASG.MaxSize - *s.ASG.DesiredCapacity)
+	scalingSize := s.ASG.MaxSize - s.ASG.DesiredCapacity
 
 	return Decision{
 		ScalingDirection: ScalingDirectionUp,
@@ -194,7 +196,7 @@ func (s *State) determineScaleUp(missingWorkers, maxCreate int) Decision {
 }
 
 func (s *State) determineScaleDown(extraWorkers, maxKill int) Decision {
-	if len(s.WorkerPool.Workers) <= int(*s.ASG.MinSize) {
+	if len(s.WorkerPool.Workers) <= s.ASG.MinSize {
 		return Decision{
 			ScalingDirection: ScalingDirectionNone,
 			Comments:         []string{"autoscaling group is already at minimum size"},
@@ -208,8 +210,8 @@ func (s *State) determineScaleDown(extraWorkers, maxKill int) Decision {
 		extraWorkers = maxKill
 	}
 
-	if overMinimum := int(*s.ASG.DesiredCapacity - *s.ASG.MinSize); extraWorkers > overMinimum {
-		comments = append(comments, fmt.Sprintf("need to kill %d workers, but can't get below minimum size of %d", extraWorkers, *s.ASG.MinSize))
+	if overMinimum := s.ASG.DesiredCapacity - s.ASG.MinSize; extraWorkers > overMinimum {
+		comments = append(comments, fmt.Sprintf("need to kill %d workers, but can't get below minimum size of %d", extraWorkers, s.ASG.MinSize))
 		extraWorkers = overMinimum
 	}
 
