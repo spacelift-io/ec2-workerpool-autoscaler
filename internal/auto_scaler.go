@@ -59,9 +59,53 @@ func (s AutoScaler) Scale(ctx context.Context, cfg RuntimeConfig) error {
 		return fmt.Errorf("could not get autoscaling group: %w", err)
 	}
 
-	state, err := NewState(workerPool, asg, cfg)
+	state, err := NewState(workerPool, asg, cfg, logger)
 	if err != nil {
 		return fmt.Errorf("could not create state: %w", err)
+	}
+
+	// Sanity check: Detect if ASG desired capacity is unreasonably high.
+	// This can happen during AWS service disruptions when AWS sets incorrect capacity.
+	// Calculate what we'd expect: valid workers + pending runs + generous buffer for scaling headroom
+	expectedMaxCapacity := state.ValidWorkerCount() + int(workerPool.PendingRuns) + cfg.AutoscalingMaxCreate
+
+	// Only trigger if capacity is SIGNIFICANTLY higher than expected
+	// to avoid false positives during normal scaling operations
+	sanityThreshold := cfg.AutoscalingCapacitySanityCheck
+	if sanityThreshold == 0 {
+		sanityThreshold = 10 // Default threshold if not configured
+	}
+	excessCapacity := asg.DesiredCapacity - expectedMaxCapacity
+	if excessCapacity >= sanityThreshold && asg.DesiredCapacity > asg.MinSize {
+		logger.Error("ASG desired capacity is suspiciously high, possible AWS service issue or external modification",
+			"asg_desired_capacity", asg.DesiredCapacity,
+			"valid_workers", state.ValidWorkerCount(),
+			"pending_runs", workerPool.PendingRuns,
+			"expected_max_capacity", expectedMaxCapacity,
+			"difference", asg.DesiredCapacity-expectedMaxCapacity,
+		)
+
+		// Reset to a sane value: valid workers + pending runs (capped by max size)
+		saneCapacity := state.ValidWorkerCount() + int(workerPool.PendingRuns)
+		if saneCapacity < asg.MinSize {
+			saneCapacity = asg.MinSize
+		}
+		if saneCapacity > asg.MaxSize {
+			saneCapacity = asg.MaxSize
+		}
+
+		logger.Warn("attempting to reset ASG desired capacity to sane value",
+			"current_capacity", asg.DesiredCapacity,
+			"new_capacity", saneCapacity)
+
+		if err := s.controller.ScaleUpASG(ctx, saneCapacity); err != nil {
+			logger.Error("failed to reset ASG desired capacity", "error", err)
+			// Don't return error - continue with normal scaling logic
+		} else {
+			logger.Info("successfully reset ASG desired capacity")
+			// Update our local ASG state to reflect the change
+			asg.DesiredCapacity = saneCapacity
+		}
 	}
 
 	// Let's make sure that for each of the in-service instances we have a

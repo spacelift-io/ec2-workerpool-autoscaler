@@ -2,6 +2,7 @@ package internal
 
 import (
 	"fmt"
+	"log/slog"
 	"time"
 )
 
@@ -17,12 +18,14 @@ type State struct {
 
 	inServiceInstanceIDs map[InstanceID]struct{}
 	workersByInstanceID  map[InstanceID]Worker
+	validWorkerCount     int // Number of workers with valid metadata
 	cfg                  RuntimeConfig
 }
 
-func NewState(workerPool *WorkerPool, asg *AutoScalingGroup, cfg RuntimeConfig) (*State, error) {
+func NewState(workerPool *WorkerPool, asg *AutoScalingGroup, cfg RuntimeConfig, logger *slog.Logger) (*State, error) {
 	workersByInstanceID := make(map[InstanceID]Worker)
 	inServiceInstanceIDs := make(map[InstanceID]struct{})
+	validWorkerCount := 0
 
 	// Validate the ASG.
 	if asg.Name == "" {
@@ -45,11 +48,16 @@ func NewState(workerPool *WorkerPool, asg *AutoScalingGroup, cfg RuntimeConfig) 
 		groupID, instanceID, err := worker.InstanceIdentity()
 
 		if err != nil {
-			return nil, err
+			logger.Warn("worker has invalid metadata, will treat as stray instance",
+				"worker_id", worker.ID,
+				"error", err)
+			continue
 		}
 
 		if string(groupID) == "" {
-			return nil, fmt.Errorf("worker %s has empty ASG ID in metadata", worker.ID)
+			logger.Warn("worker has empty ASG ID in metadata, will treat as stray instance",
+				"worker_id", worker.ID)
+			continue
 		}
 
 		if string(groupID) != asg.Name {
@@ -57,6 +65,7 @@ func NewState(workerPool *WorkerPool, asg *AutoScalingGroup, cfg RuntimeConfig) 
 		}
 
 		workersByInstanceID[instanceID] = worker
+		validWorkerCount++
 	}
 
 	for _, instance := range asg.Instances {
@@ -72,8 +81,14 @@ func NewState(workerPool *WorkerPool, asg *AutoScalingGroup, cfg RuntimeConfig) 
 		ASG:                  asg,
 		inServiceInstanceIDs: inServiceInstanceIDs,
 		workersByInstanceID:  workersByInstanceID,
+		validWorkerCount:     validWorkerCount,
 		cfg:                  cfg,
 	}, nil
+}
+
+// ValidWorkerCount returns the number of workers with valid metadata.
+func (s *State) ValidWorkerCount() int {
+	return s.validWorkerCount
 }
 
 // ScalableWorkers returns a list of workers that are not currently busy.
@@ -136,10 +151,10 @@ func (s *State) detachedNotTerminatedInstances() []string {
 }
 
 func (s *State) Decide(maxCreate, maxKill int) Decision {
-	if len(s.WorkerPool.Workers) != len(s.ASG.Instances) {
+	if s.validWorkerCount != len(s.ASG.Instances) {
 		return Decision{
 			ScalingDirection: ScalingDirectionNone,
-			Comments:         []string{"number of workers does not match the number of instances in the ASG"},
+			Comments:         []string{"number of valid workers does not match the number of instances in the ASG"},
 		}
 	}
 
@@ -162,7 +177,7 @@ func (s *State) Decide(maxCreate, maxKill int) Decision {
 }
 
 func (s *State) determineScaleUp(missingWorkers, maxCreate int) Decision {
-	if len(s.WorkerPool.Workers) >= s.ASG.MaxSize {
+	if s.validWorkerCount >= s.ASG.MaxSize {
 		return Decision{
 			ScalingDirection: ScalingDirectionNone,
 			Comments:         []string{"autoscaling group is already at maximum size"},
@@ -196,7 +211,7 @@ func (s *State) determineScaleUp(missingWorkers, maxCreate int) Decision {
 }
 
 func (s *State) determineScaleDown(extraWorkers, maxKill int) Decision {
-	if len(s.WorkerPool.Workers) <= s.ASG.MinSize {
+	if s.validWorkerCount <= s.ASG.MinSize {
 		return Decision{
 			ScalingDirection: ScalingDirectionNone,
 			Comments:         []string{"autoscaling group is already at minimum size"},
