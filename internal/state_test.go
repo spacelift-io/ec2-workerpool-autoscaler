@@ -2,6 +2,7 @@ package internal_test
 
 import (
 	"encoding/json"
+	"log/slog"
 	"testing"
 	"time"
 
@@ -9,6 +10,10 @@ import (
 
 	"github.com/spacelift-io/awsautoscalr/internal"
 )
+
+func testLogger() *slog.Logger {
+	return slog.Default()
+}
 
 func TestState_StrayInstances(t *testing.T) {
 	const asgName = "asg-name"
@@ -44,7 +49,7 @@ func TestState_StrayInstances(t *testing.T) {
 		},
 	}
 
-	state, err := internal.NewState(workerPool, asg, cfg)
+	state, err := internal.NewState(workerPool, asg, cfg, testLogger())
 	require.NoError(t, err)
 
 	strayInstances := state.StrayInstances()
@@ -61,7 +66,7 @@ func TestNewState_ASGNameNotSet_ReturnsError(t *testing.T) {
 	workerPool := &internal.WorkerPool{}
 	cfg := internal.RuntimeConfig{}
 
-	_, err := internal.NewState(workerPool, asg, cfg)
+	_, err := internal.NewState(workerPool, asg, cfg, testLogger())
 
 	require.EqualError(t, err, "ASG name is not set")
 }
@@ -76,7 +81,7 @@ func TestNewState_ASGMinSizeNotSet_ReturnsError(t *testing.T) {
 	workerPool := &internal.WorkerPool{}
 	cfg := internal.RuntimeConfig{}
 
-	_, err := internal.NewState(workerPool, asg, cfg)
+	_, err := internal.NewState(workerPool, asg, cfg, testLogger())
 
 	require.EqualError(t, err, "ASG minimum size is not set")
 }
@@ -91,7 +96,7 @@ func TestNewState_ASGMaxSizeNotSet_ReturnsError(t *testing.T) {
 	workerPool := &internal.WorkerPool{}
 	cfg := internal.RuntimeConfig{}
 
-	_, err := internal.NewState(workerPool, asg, cfg)
+	_, err := internal.NewState(workerPool, asg, cfg, testLogger())
 
 	require.EqualError(t, err, "ASG maximum size is not set")
 }
@@ -106,12 +111,12 @@ func TestNewState_ASGDesiredCapacityNotSet_ReturnsError(t *testing.T) {
 	workerPool := &internal.WorkerPool{}
 	cfg := internal.RuntimeConfig{}
 
-	_, err := internal.NewState(workerPool, asg, cfg)
+	_, err := internal.NewState(workerPool, asg, cfg, testLogger())
 
 	require.EqualError(t, err, "ASG desired capacity is not set")
 }
 
-func TestNewState_WorkerMissingMetadata_ReturnsError(t *testing.T) {
+func TestNewState_WorkerMissingMetadata_SkipsWorker(t *testing.T) {
 	asg := &internal.AutoScalingGroup{
 		Name:            "asg-name",
 		MinSize:         1,
@@ -120,19 +125,20 @@ func TestNewState_WorkerMissingMetadata_ReturnsError(t *testing.T) {
 	}
 	workerPool := &internal.WorkerPool{
 		Workers: []internal.Worker{{
+			ID:       "worker-123",
 			Metadata: mustJSON(map[string]any{}),
 		}},
 	}
 	cfg := internal.RuntimeConfig{}
 
-	_, err := internal.NewState(workerPool, asg, cfg)
+	state, err := internal.NewState(workerPool, asg, cfg, testLogger())
 
-	require.Error(t, err)
-	require.ErrorContains(t, err, "metadata asg_id not present")
-	require.ErrorContains(t, err, "metadata instance_id not present")
+	require.NoError(t, err)
+	require.NotNil(t, state)
+	require.Equal(t, 0, state.ValidWorkerCount(), "worker with missing metadata should be skipped")
 }
 
-func TestNewState_WorkerEmptyASGID_ReturnsError(t *testing.T) {
+func TestNewState_WorkerEmptyASGID_SkipsWorker(t *testing.T) {
 	asg := &internal.AutoScalingGroup{
 		Name:            "asg-name",
 		MinSize:         1,
@@ -150,9 +156,11 @@ func TestNewState_WorkerEmptyASGID_ReturnsError(t *testing.T) {
 	}
 	cfg := internal.RuntimeConfig{}
 
-	_, err := internal.NewState(workerPool, asg, cfg)
+	state, err := internal.NewState(workerPool, asg, cfg, testLogger())
 
-	require.EqualError(t, err, "worker worker-123 has empty ASG ID in metadata")
+	require.NoError(t, err)
+	require.NotNil(t, state)
+	require.Equal(t, 0, state.ValidWorkerCount(), "worker with empty ASG ID should be skipped")
 }
 
 func TestNewState_WorkerIncorrectASG_ReturnsError(t *testing.T) {
@@ -173,7 +181,7 @@ func TestNewState_WorkerIncorrectASG_ReturnsError(t *testing.T) {
 	}
 	cfg := internal.RuntimeConfig{}
 
-	_, err := internal.NewState(workerPool, asg, cfg)
+	_, err := internal.NewState(workerPool, asg, cfg, testLogger())
 
 	require.EqualError(t, err, "worker worker-456 has incorrect ASG: other-asg (expected: asg-name)")
 }
@@ -195,7 +203,7 @@ func TestStrayInstances_NoWorkers_InstanceInService_ReturnsStrayInstance(t *test
 	workerPool := &internal.WorkerPool{}
 	cfg := internal.RuntimeConfig{}
 
-	state, err := internal.NewState(workerPool, asg, cfg)
+	state, err := internal.NewState(workerPool, asg, cfg, testLogger())
 	require.NoError(t, err)
 
 	instanceIDs := state.StrayInstances()
@@ -220,7 +228,7 @@ func TestStrayInstances_NoWorkers_InstanceNotInService_ReturnsEmpty(t *testing.T
 	workerPool := &internal.WorkerPool{}
 	cfg := internal.RuntimeConfig{}
 
-	state, err := internal.NewState(workerPool, asg, cfg)
+	state, err := internal.NewState(workerPool, asg, cfg, testLogger())
 	require.NoError(t, err)
 
 	instanceIDs := state.StrayInstances()
@@ -252,7 +260,7 @@ func TestStrayInstances_WorkerMatchesInstance_ReturnsEmpty(t *testing.T) {
 	}
 	cfg := internal.RuntimeConfig{}
 
-	state, err := internal.NewState(workerPool, asg, cfg)
+	state, err := internal.NewState(workerPool, asg, cfg, testLogger())
 	require.NoError(t, err)
 
 	instanceIDs := state.StrayInstances()
@@ -284,7 +292,7 @@ func TestStrayInstances_WorkerDoesNotMatchInstance_ReturnsStrayInstance(t *testi
 	}
 	cfg := internal.RuntimeConfig{}
 
-	state, err := internal.NewState(workerPool, asg, cfg)
+	state, err := internal.NewState(workerPool, asg, cfg, testLogger())
 	require.NoError(t, err)
 
 	instanceIDs := state.StrayInstances()
@@ -321,7 +329,7 @@ func TestScalableWorkers_ReturnsIdleWorkers(t *testing.T) {
 	}
 	cfg := internal.RuntimeConfig{}
 
-	state, err := internal.NewState(workerPool, asg, cfg)
+	state, err := internal.NewState(workerPool, asg, cfg, testLogger())
 	require.NoError(t, err)
 
 	scalableWorkers := state.ScalableWorkers()
@@ -342,7 +350,7 @@ func TestDecide_NoWorkersNoPendingRunsNoInstances_NoScaling(t *testing.T) {
 		AutoscalingScaleDownDelay: 50,
 	}
 
-	state, err := internal.NewState(workerPool, asg, cfg)
+	state, err := internal.NewState(workerPool, asg, cfg, testLogger())
 	require.NoError(t, err)
 
 	decision := state.Decide(2, 2)
@@ -365,14 +373,14 @@ func TestDecide_NoWorkersNoPendingRunsWithInstances_NoScalingNotInBalance(t *tes
 		AutoscalingScaleDownDelay: 50,
 	}
 
-	state, err := internal.NewState(workerPool, asg, cfg)
+	state, err := internal.NewState(workerPool, asg, cfg, testLogger())
 	require.NoError(t, err)
 
 	decision := state.Decide(2, 2)
 
 	require.Equal(t, internal.ScalingDirectionNone, decision.ScalingDirection)
 	require.Zero(t, decision.ScalingSize)
-	require.ElementsMatch(t, []string{"number of workers does not match the number of instances in the ASG"}, decision.Comments)
+	require.ElementsMatch(t, []string{"number of valid workers does not match the number of instances in the ASG"}, decision.Comments)
 }
 
 func TestDecide_NoWorkersPendingRunsAtMaxSize_NoScaling(t *testing.T) {
@@ -394,7 +402,7 @@ func TestDecide_NoWorkersPendingRunsAtMaxSize_NoScaling(t *testing.T) {
 		AutoscalingScaleDownDelay: 50,
 	}
 
-	state, err := internal.NewState(workerPool, asg, cfg)
+	state, err := internal.NewState(workerPool, asg, cfg, testLogger())
 	require.NoError(t, err)
 
 	decision := state.Decide(2, 2)
@@ -418,7 +426,7 @@ func TestDecide_PendingRunsConstrainedByMaxCreate_ScalesUpBy1(t *testing.T) {
 		AutoscalingScaleDownDelay: 50,
 	}
 
-	state, err := internal.NewState(workerPool, asg, cfg)
+	state, err := internal.NewState(workerPool, asg, cfg, testLogger())
 	require.NoError(t, err)
 
 	decision := state.Decide(1, 2)
@@ -445,7 +453,7 @@ func TestDecide_PendingRunsNotConstrainedByMaxCreateOrASGSize_ScalesUpBy5(t *tes
 		AutoscalingScaleDownDelay: 50,
 	}
 
-	state, err := internal.NewState(workerPool, asg, cfg)
+	state, err := internal.NewState(workerPool, asg, cfg, testLogger())
 	require.NoError(t, err)
 
 	decision := state.Decide(10, 2)
@@ -469,7 +477,7 @@ func TestDecide_PendingRunsConstrainedByMaxASGSize_ScalesUpBy2(t *testing.T) {
 		AutoscalingScaleDownDelay: 50,
 	}
 
-	state, err := internal.NewState(workerPool, asg, cfg)
+	state, err := internal.NewState(workerPool, asg, cfg, testLogger())
 	require.NoError(t, err)
 
 	decision := state.Decide(10, 2)
@@ -497,7 +505,7 @@ func TestDecide_NoPendingRunsAtMinSize_NoScaling(t *testing.T) {
 		AutoscalingScaleDownDelay: 50,
 	}
 
-	state, err := internal.NewState(workerPool, asg, cfg)
+	state, err := internal.NewState(workerPool, asg, cfg, testLogger())
 	require.NoError(t, err)
 
 	decision := state.Decide(2, 2)
@@ -525,7 +533,7 @@ func TestDecide_NoPendingRunsConstrainedByMaxKill_ScalesDownBy1(t *testing.T) {
 		AutoscalingScaleDownDelay: 50,
 	}
 
-	state, err := internal.NewState(workerPool, asg, cfg)
+	state, err := internal.NewState(workerPool, asg, cfg, testLogger())
 	require.NoError(t, err)
 
 	decision := state.Decide(2, 1)
@@ -556,7 +564,7 @@ func TestDecide_NoPendingRunsConstrainedByMinASGSize_ScalesDownBy1(t *testing.T)
 		AutoscalingScaleDownDelay: 50,
 	}
 
-	state, err := internal.NewState(workerPool, asg, cfg)
+	state, err := internal.NewState(workerPool, asg, cfg, testLogger())
 	require.NoError(t, err)
 
 	decision := state.Decide(2, 10)
@@ -587,7 +595,7 @@ func TestDecide_NoPendingRunsNotConstrainedByMinASGSize_ScalesDownBy2(t *testing
 		AutoscalingScaleDownDelay: 50,
 	}
 
-	state, err := internal.NewState(workerPool, asg, cfg)
+	state, err := internal.NewState(workerPool, asg, cfg, testLogger())
 	require.NoError(t, err)
 
 	decision := state.Decide(2, 10)
@@ -630,7 +638,7 @@ func TestDecide_WaitingForIdleWorkers_NoScaling(t *testing.T) {
 		AutoscalingScaleDownDelay: 50,
 	}
 
-	state, err := internal.NewState(workerPool, asg, cfg)
+	state, err := internal.NewState(workerPool, asg, cfg, testLogger())
 	require.NoError(t, err)
 
 	decision := state.Decide(2, 10)
