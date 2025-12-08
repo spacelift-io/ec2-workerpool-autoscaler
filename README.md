@@ -42,7 +42,9 @@ The utility requires the following AWS permissions to be granted to the IAM role
 - `ec2:TerminateInstances` in the region the autoscaling group is in to terminate the instances;
 - `ssm:GetParameter` on the SSM Parameter Store parameter storing the Spacelift API key secret;
 
-The Spacelift API key needs to have administrator privileges for the [space](https://docs.spacelift.io/concepts/spaces/) where the worker pool is defined.
+The Spacelift API key needs to have
+- `Space:Read` for the Space the worker exists
+- `Worker Pool:Drain Worker` 
 
 ## Observability
 
