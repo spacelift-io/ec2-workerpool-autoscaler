@@ -2,6 +2,17 @@ version: 2
 
 builds:
   - main: ./cmd/lambda
+    id: lambda
+    env:
+      - CGO_ENABLED=0
+      - GOPRIVATE="github.com/spacelift-io"
+    mod_timestamp: '{{ .CommitTimestamp }}'
+    flags: [-trimpath, -v]
+    goos: [linux]
+    goarch: [amd64, arm64]
+    binary: bootstrap
+  - main: ./cmd/azurefunc
+    id: azurefunc
     env:
       - CGO_ENABLED=0
       - GOPRIVATE="github.com/spacelift-io"
@@ -12,8 +23,14 @@ builds:
     binary: bootstrap
 
 archives:
-  - formats: [zip]
+  - id: lambda
+    ids: [lambda]
+    formats: [zip]
     name_template: '{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}'
+  - id: azurefunc
+    ids: [azurefunc]
+    formats: [zip]
+    name_template: '{{ .ProjectName }}_azurefunc_{{ .Os }}_{{ .Arch }}'
 
 changelog:
   use: github-native
