@@ -155,21 +155,31 @@ func NewAzureController(ctx context.Context, cfg *RuntimeConfig) (*AzureControll
 	}
 
 	// Create Azure Key Vault client
-	// Parse Key Vault URL from secret name (format: https://{vault-name}.vault.azure.net/secrets/{secret-name})
-	keyVaultURL := cfg.SpaceliftAPISecretName
-	if !strings.HasPrefix(keyVaultURL, "https://") {
-		keyVaultURL = fmt.Sprintf("https://%s.vault.azure.net", keyVaultURL)
-	}
-
-	// Extract vault URL and secret name
+	// Parse Key Vault URL and secret name from config
+	// Supported formats:
+	//   1. Full URL: https://{vault-name}.vault.azure.net/secrets/{secret-name}
+	//   2. Vault/secret: {vault-name}/{secret-name}
+	//   3. Vault name only: {vault-name} (secret name must be provided separately)
 	var vaultURL, secretName string
-	if strings.Contains(keyVaultURL, "/secrets/") {
-		parts := strings.Split(keyVaultURL, "/secrets/")
-		vaultURL = parts[0]
+	input := cfg.SpaceliftAPISecretName
+
+	if strings.HasPrefix(input, "https://") {
+		// Format 1: Full URL
+		if strings.Contains(input, "/secrets/") {
+			parts := strings.Split(input, "/secrets/")
+			vaultURL = parts[0]
+			secretName = parts[1]
+		} else {
+			return nil, fmt.Errorf("invalid Key Vault URL format: %s (expected https://{vault}.vault.azure.net/secrets/{secret})", input)
+		}
+	} else if strings.Contains(input, "/") {
+		// Format 2: Vault/secret pair
+		parts := strings.SplitN(input, "/", 2)
+		vaultURL = fmt.Sprintf("https://%s.vault.azure.net", parts[0])
 		secretName = parts[1]
 	} else {
-		vaultURL = keyVaultURL
-		secretName = cfg.SpaceliftAPISecretName
+		// Format 3: Vault name only - need additional config for secret name
+		return nil, fmt.Errorf("invalid Key Vault configuration: %s (expected format: {vault}/{secret} or https://{vault}.vault.azure.net/secrets/{secret})", input)
 	}
 
 	kvClient, err := azsecrets.NewClient(vaultURL, cred, nil)
