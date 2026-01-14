@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v6"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/monitor/armmonitor"
 	"github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azsecrets"
 	"github.com/spacelift-io/awsautoscalr/internal/ifaces"
 	"go.opentelemetry.io/otel"
@@ -28,8 +30,8 @@ type AzureController struct {
 
 // azureComputeClient wraps the Azure Compute SDK client to implement the AzureCompute interface.
 type azureComputeClient struct {
-	vmssClient   *armcompute.VirtualMachineScaleSetsClient
-	vmssVMClient *armcompute.VirtualMachineScaleSetVMsClient
+	vmssClient               *armcompute.VirtualMachineScaleSetsClient
+	vmssVirtualMachineClient *armcompute.VirtualMachineScaleSetVMsClient
 }
 
 func (c *azureComputeClient) GetVMScaleSet(ctx context.Context, resourceGroupName string, vmScaleSetName string) (*armcompute.VirtualMachineScaleSet, error) {
@@ -41,7 +43,7 @@ func (c *azureComputeClient) GetVMScaleSet(ctx context.Context, resourceGroupNam
 }
 
 func (c *azureComputeClient) ListVMScaleSetVMs(ctx context.Context, resourceGroupName string, vmScaleSetName string) ([]*armcompute.VirtualMachineScaleSetVM, error) {
-	pager := c.vmssVMClient.NewListPager(resourceGroupName, vmScaleSetName, nil)
+	pager := c.vmssVirtualMachineClient.NewListPager(resourceGroupName, vmScaleSetName, nil)
 	var vms []*armcompute.VirtualMachineScaleSetVM
 
 	for pager.More() {
@@ -56,7 +58,7 @@ func (c *azureComputeClient) ListVMScaleSetVMs(ctx context.Context, resourceGrou
 }
 
 func (c *azureComputeClient) GetVMScaleSetVM(ctx context.Context, resourceGroupName string, vmScaleSetName string, instanceID string) (*armcompute.VirtualMachineScaleSetVM, error) {
-	resp, err := c.vmssVMClient.Get(ctx, resourceGroupName, vmScaleSetName, instanceID, nil)
+	resp, err := c.vmssVirtualMachineClient.Get(ctx, resourceGroupName, vmScaleSetName, instanceID, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -83,7 +85,7 @@ func (c *azureComputeClient) UpdateVMScaleSetCapacity(ctx context.Context, resou
 }
 
 func (c *azureComputeClient) DeleteVMScaleSetVM(ctx context.Context, resourceGroupName string, vmScaleSetName string, instanceID string) error {
-	poller, err := c.vmssVMClient.BeginDelete(ctx, resourceGroupName, vmScaleSetName, instanceID, nil)
+	poller, err := c.vmssVirtualMachineClient.BeginDelete(ctx, resourceGroupName, vmScaleSetName, instanceID, nil)
 	if err != nil {
 		return err
 	}
@@ -101,6 +103,54 @@ func (c *azureKeyVaultClient) GetSecret(ctx context.Context, secretName string) 
 	return c.client.GetSecret(ctx, secretName, "", nil)
 }
 
+// checkForAutoscaleSettings checks if the VMSS has any Azure autoscale settings configured.
+// Returns an error if autoscale is enabled, as this would conflict with manual scaling.
+func checkForAutoscaleSettings(ctx context.Context, subscriptionID, resourceGroupName, vmssResourceID string, cred *azidentity.DefaultAzureCredential) error {
+	autoscaleClient, err := armmonitor.NewAutoscaleSettingsClient(subscriptionID, cred, nil)
+	if err != nil {
+		return fmt.Errorf("could not create Azure Monitor autoscale client: %w", err)
+	}
+
+	// List autoscale settings in the resource group
+	pager := autoscaleClient.NewListByResourceGroupPager(resourceGroupName, nil)
+
+	var enabledAutoscaleSettings []string
+
+	for pager.More() {
+		page, err := pager.NextPage(ctx)
+		if err != nil {
+			return fmt.Errorf("could not list autoscale settings: %w", err)
+		}
+
+		for _, setting := range page.Value {
+			// Check if this autoscale setting targets our VMSS
+			if setting.Properties != nil && setting.Properties.TargetResourceURI != nil {
+				targetURI := *setting.Properties.TargetResourceURI
+
+				// Compare the target resource URI with our VMSS resource ID
+				if strings.EqualFold(targetURI, vmssResourceID) {
+					// Check if the autoscale setting is enabled
+					if setting.Properties.Enabled != nil && *setting.Properties.Enabled {
+						settingName := "unknown"
+						if setting.Name != nil {
+							settingName = *setting.Name
+						}
+						enabledAutoscaleSettings = append(enabledAutoscaleSettings, settingName)
+					}
+				}
+			}
+		}
+	}
+
+	if len(enabledAutoscaleSettings) > 0 {
+		return fmt.Errorf("VMSS has Azure autoscale enabled (settings: %s). This conflicts with manual scaling. "+
+			"Please disable Azure autoscale for this VMSS or use a different VMSS for the autoscaler",
+			strings.Join(enabledAutoscaleSettings, ", "))
+	}
+
+	return nil
+}
+
 // NewAzureController creates a new Azure controller instance.
 func NewAzureController(ctx context.Context, cfg *RuntimeConfig) (*AzureController, error) {
 	// Create Azure credential
@@ -111,31 +161,25 @@ func NewAzureController(ctx context.Context, cfg *RuntimeConfig) (*AzureControll
 
 	// Parse the VMSS resource ID to extract resource group and VMSS name
 	// Expected format: /subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.Compute/virtualMachineScaleSets/{vmssName}
-	resourceParts := strings.Split(cfg.AutoscalingGroupARN, "/")
-	if len(resourceParts) < 9 {
-		return nil, fmt.Errorf("could not parse Azure VMSS resource ID: invalid format")
+	resourceID, err := arm.ParseResourceID(cfg.AutoscalingGroupARN)
+	if err != nil {
+		return nil, fmt.Errorf("could not parse Azure VMSS resource ID: %w", err)
 	}
 
-	var subscriptionID, resourceGroupName, vmssName string
-	for i, part := range resourceParts {
-		switch part {
-		case "subscriptions":
-			if i+1 < len(resourceParts) {
-				subscriptionID = resourceParts[i+1]
-			}
-		case "resourceGroups":
-			if i+1 < len(resourceParts) {
-				resourceGroupName = resourceParts[i+1]
-			}
-		case "virtualMachineScaleSets":
-			if i+1 < len(resourceParts) {
-				vmssName = resourceParts[i+1]
-			}
-		}
-	}
+	subscriptionID := resourceID.SubscriptionID
+	resourceGroupName := resourceID.ResourceGroupName
+	vmssName := resourceID.Name
 
 	if subscriptionID == "" || resourceGroupName == "" || vmssName == "" {
-		return nil, fmt.Errorf("could not parse Azure VMSS resource ID: missing required components")
+		return nil, fmt.Errorf("could not parse Azure VMSS resource ID: missing required components (subscription: %q, resourceGroup: %q, vmss: %q)",
+			subscriptionID, resourceGroupName, vmssName)
+	}
+
+	// Check for Azure autoscale settings that would conflict with manual scaling
+	// We use the full resource ID for comparison with autoscale target URIs
+	vmssResourceID := cfg.AutoscalingGroupARN
+	if err := checkForAutoscaleSettings(ctx, subscriptionID, resourceGroupName, vmssResourceID, cred); err != nil {
+		return nil, err
 	}
 
 	// Create Azure Compute clients
@@ -144,43 +188,26 @@ func NewAzureController(ctx context.Context, cfg *RuntimeConfig) (*AzureControll
 		return nil, fmt.Errorf("could not create Azure VMSS client: %w", err)
 	}
 
-	vmssVMClient, err := armcompute.NewVirtualMachineScaleSetVMsClient(subscriptionID, cred, nil)
+	vmssVirtualMachineClient, err := armcompute.NewVirtualMachineScaleSetVMsClient(subscriptionID, cred, nil)
 	if err != nil {
 		return nil, fmt.Errorf("could not create Azure VMSS VM client: %w", err)
 	}
 
 	computeClient := &azureComputeClient{
 		vmssClient:   vmssClient,
-		vmssVMClient: vmssVMClient,
+		vmssVirtualMachineClient: vmssVirtualMachineClient,
 	}
 
-	// Create Azure Key Vault client
-	// Parse Key Vault URL and secret name from config
-	// Supported formats:
-	//   1. Full URL: https://{vault-name}.vault.azure.net/secrets/{secret-name}
-	//   2. Vault/secret: {vault-name}/{secret-name}
-	//   3. Vault name only: {vault-name} (secret name must be provided separately)
-	var vaultURL, secretName string
-	input := cfg.SpaceliftAPISecretName
-
-	if strings.HasPrefix(input, "https://") {
-		// Format 1: Full URL
-		if strings.Contains(input, "/secrets/") {
-			parts := strings.Split(input, "/secrets/")
-			vaultURL = parts[0]
-			secretName = parts[1]
-		} else {
-			return nil, fmt.Errorf("invalid Key Vault URL format: %s (expected https://{vault}.vault.azure.net/secrets/{secret})", input)
-		}
-	} else if strings.Contains(input, "/") {
-		// Format 2: Vault/secret pair
-		parts := strings.SplitN(input, "/", 2)
-		vaultURL = fmt.Sprintf("https://%s.vault.azure.net", parts[0])
-		secretName = parts[1]
-	} else {
-		// Format 3: Vault name only - need additional config for secret name
-		return nil, fmt.Errorf("invalid Key Vault configuration: %s (expected format: {vault}/{secret} or https://{vault}.vault.azure.net/secrets/{secret})", input)
+	// Create Azure Key Vault client using dedicated config fields
+	if cfg.AzureKeyVaultName == "" {
+		return nil, fmt.Errorf("AZURE_KEY_VAULT_NAME environment variable is required")
 	}
+	if cfg.AzureSecretName == "" {
+		return nil, fmt.Errorf("AZURE_SECRET_NAME environment variable is required")
+	}
+
+	vaultURL := fmt.Sprintf("https://%s.vault.azure.net", cfg.AzureKeyVaultName)
+	secretName := cfg.AzureSecretName
 
 	kvClient, err := azsecrets.NewClient(vaultURL, cred, nil)
 	if err != nil {

@@ -1,10 +1,14 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	cmdinternal "github.com/spacelift-io/awsautoscalr/cmd/internal"
@@ -19,6 +23,10 @@ import (
 
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+
+	// Create a context that listens for shutdown signals
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
 
 	port := os.Getenv("FUNCTIONS_CUSTOMHANDLER_PORT")
 	if port == "" {
@@ -41,13 +49,42 @@ func main() {
 		Handler:      mux,
 		ReadTimeout:  30 * time.Second,
 		WriteTimeout: 5 * time.Minute,
+		// Propagate cancellation context to all requests
+		BaseContext: func(_ net.Listener) context.Context {
+			return ctx
+		},
 	}
 
-	logger.Info("Starting Azure Functions custom handler", "port", port)
-	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+	// Start server in a goroutine so we can listen for shutdown signals
+	serverErr := make(chan error, 1)
+	go func() {
+		logger.Info("Starting Azure Functions custom handler", "port", port)
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			serverErr <- err
+		}
+	}()
+
+	// Wait for shutdown signal or server error
+	select {
+	case err := <-serverErr:
 		logger.Error("server error", "error", err)
 		os.Exit(1)
+	case <-ctx.Done():
+		logger.Info("Shutdown signal received, starting graceful shutdown")
+		stop() // Stop receiving more signals
 	}
+
+	// Create a context with timeout for graceful shutdown
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	// Attempt graceful shutdown
+	if err := server.Shutdown(shutdownCtx); err != nil {
+		logger.Error("forced shutdown due to timeout", "error", err)
+		os.Exit(1)
+	}
+
+	logger.Info("Server stopped gracefully")
 }
 
 func handleAutoscaler(w http.ResponseWriter, r *http.Request, logger *slog.Logger) {
