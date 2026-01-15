@@ -16,6 +16,10 @@ type RuntimeConfig struct {
 	// Azure-specific configuration for Key Vault
 	AzureKeyVaultName string `env:"AZURE_KEY_VAULT_NAME"`
 	AzureSecretName   string `env:"AZURE_SECRET_NAME"`
+
+	// Azure-specific autoscaling limits
+	AzureAutoscalingMinSize int `env:"AZURE_AUTOSCALING_MIN_SIZE" envDefault:"-1"`
+	AzureAutoscalingMaxSize int `env:"AZURE_AUTOSCALING_MAX_SIZE" envDefault:"-1"`
 }
 
 func (r RuntimeConfig) GroupKeyAndID() (string, string) {

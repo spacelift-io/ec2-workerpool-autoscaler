@@ -63,8 +63,6 @@ The utility is designed to be executed periodically. Each execution performs the
 
     If there are more schedulable runs than idle workers, we attempt to provision the capacity, constrained by the max number of creatable instances and the maximum size of the auto-scaling group.
 
----
-
 ## AWS Setup
 
 The AWS autoscaler works with EC2 Auto Scaling Groups. In the majority of cases, such an autoscaling group is provisioned using [this Terraform module](https://github.com/spacelift-io/terraform-aws-spacelift-workerpool-on-ec2).
@@ -117,8 +115,6 @@ The utility logs its actions to the standard output. The logs are formatted as J
 - `xray:PutTraceSegments` to send the trace segments to the X-Ray daemon;
 - `xray:PutTelemetryRecords` to send the telemetry records to the X-Ray daemon;
 
----
-
 ## Azure Setup
 
 The Azure autoscaler works with Azure Virtual Machine Scale Sets (VMSS). The autoscaler will automatically detect and prevent conflicts with Azure's native autoscaling feature - if you have Azure autoscaling enabled on your VMSS, the utility will fail with an error message asking you to disable it.
@@ -141,11 +137,13 @@ The utility requires the following environment variables to be set:
 - `AZURE_KEY_VAULT_NAME` - the name of the Azure Key Vault containing the Spacelift API key secret (just the name, not the full URL);
 - `AZURE_SECRET_NAME` - the name of the secret in Azure Key Vault containing the Spacelift API key secret;
 
-Three additional environment variables are optional, but very useful if you're running at a non-trivial scale:
+Additional optional environment variables:
 
 - `AUTOSCALING_MAX_KILL` (defaults to 1) - the maximum number of VM instances the utility is allowed to terminate in a single run;
 - `AUTOSCALING_MAX_CREATE` (defaults to 1) - the maximum number of VM instances the utility is allowed to create in a single run;
-- `AUTOSCALING_SCALE_DOWN_DELAY` (defaults to 0) - the number of minutes a worker must be registered to Spacelift before its eligible to be scaled in.
+- `AUTOSCALING_SCALE_DOWN_DELAY` (defaults to 0) - the number of minutes a worker must be registered to Spacelift before its eligible to be scaled in;
+- `AZURE_AUTOSCALING_MIN_SIZE` (optional) - the minimum number of VM instances the autoscaler should maintain in the VMSS. If not set, defaults to 0;
+- `AZURE_AUTOSCALING_MAX_SIZE` (optional) - the maximum number of VM instances the autoscaler can scale up to in the VMSS. If not set, defaults to 2x the current VMSS capacity;
 
 ### Azure Authentication
 

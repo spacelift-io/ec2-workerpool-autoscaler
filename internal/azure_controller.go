@@ -26,6 +26,8 @@ type AzureController struct {
 	// Configuration.
 	AzureResourceGroupName string
 	AzureVMSSName          string
+	AzureMinSize           int
+	AzureMaxSize           int
 }
 
 // azureComputeClient wraps the Azure Compute SDK client to implement the AzureCompute interface.
@@ -241,6 +243,8 @@ func NewAzureController(ctx context.Context, cfg *RuntimeConfig) (*AzureControll
 		KeyVault:               keyVaultClient,
 		AzureResourceGroupName: resourceGroupName,
 		AzureVMSSName:          vmssName,
+		AzureMinSize:           cfg.AzureAutoscalingMinSize,
+		AzureMaxSize:           cfg.AzureAutoscalingMaxSize,
 	}, nil
 }
 
@@ -324,10 +328,21 @@ func (c *AzureController) GetAutoscalingGroup(ctx context.Context) (out *AutoSca
 	// Azure VMSS uses SKU capacity instead of ASG-style min/max/desired capacity
 	if vmss.SKU != nil && vmss.SKU.Capacity != nil {
 		out.DesiredCapacity = int(*vmss.SKU.Capacity)
-		// Azure VMSS doesn't have explicit min/max, so we set reasonable defaults
-		// Min is typically 0, and we use a high max to not artificially limit scaling
-		out.MinSize = 0
-		out.MaxSize = int(*vmss.SKU.Capacity) * 2
+
+		// Use configured min/max if provided, otherwise use defaults
+		if c.AzureMinSize > 0 {
+			out.MinSize = c.AzureMinSize
+		} else {
+			// Default: 0
+			out.MinSize = 0
+		}
+
+		if c.AzureMaxSize > 0 {
+			out.MaxSize = c.AzureMaxSize
+		} else {
+			// Default: 2x current capacity to not artificially limit scaling
+			out.MaxSize = int(*vmss.SKU.Capacity) * 2
+		}
 	}
 
 	for _, vm := range vms {
