@@ -326,23 +326,26 @@ func (c *AzureController) GetAutoscalingGroup(ctx context.Context) (out *AutoSca
 	}
 
 	// Azure VMSS uses SKU capacity instead of ASG-style min/max/desired capacity
+	skuCapacity := 2
 	if vmss.SKU != nil && vmss.SKU.Capacity != nil {
 		out.DesiredCapacity = int(*vmss.SKU.Capacity)
+		skuCapacity = int(*vmss.SKU.Capacity)
+	} else {
+		out.DesiredCapacity = skuCapacity
+	}
 
-		// Use configured min/max if provided, otherwise use defaults
-		if c.AzureMinSize > 0 {
-			out.MinSize = c.AzureMinSize
-		} else {
-			// Default: 0
-			out.MinSize = 0
-		}
+	// Use configured min/max if provided, otherwise use defaults
+	if c.AzureMinSize > 0 {
+		out.MinSize = c.AzureMinSize
+	} else {
+		// Default: 0
+		out.MinSize = 0
+	}
 
-		if c.AzureMaxSize > 0 {
-			out.MaxSize = c.AzureMaxSize
-		} else {
-			// Default: 2x current capacity to not artificially limit scaling
-			out.MaxSize = int(*vmss.SKU.Capacity) * 2
-		}
+	if c.AzureMaxSize > 0 {
+		out.MaxSize = c.AzureMaxSize
+	} else {
+		out.MaxSize = skuCapacity * 2
 	}
 
 	for _, vm := range vms {
