@@ -143,8 +143,8 @@ func checkForAutoscaleSettings(ctx context.Context, subscriptionID, resourceGrou
 	}
 
 	if len(enabledAutoscaleSettings) > 0 {
-		return fmt.Errorf("VMSS has Azure autoscale enabled (settings: %s). This conflicts with manual scaling. "+
-			"Please disable Azure autoscale for this VMSS or use a different VMSS for the autoscaler",
+		return fmt.Errorf("VMSS has Azure autoscaling enabled (settings: %s). This conflicts with manual scaling. "+
+			"Please disable Azure autoscaling for this VMSS or use a different VMSS for the autoscaler",
 			strings.Join(enabledAutoscaleSettings, ", "))
 	}
 
@@ -194,7 +194,7 @@ func NewAzureController(ctx context.Context, cfg *RuntimeConfig) (*AzureControll
 	}
 
 	computeClient := &azureComputeClient{
-		vmssClient:   vmssClient,
+		vmssClient:               vmssClient,
 		vmssVirtualMachineClient: vmssVirtualMachineClient,
 	}
 
