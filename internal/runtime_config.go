@@ -19,7 +19,7 @@ type RuntimeConfig struct {
 
 	// Azure-specific autoscaling limits
 	AzureAutoscalingMinSize int `env:"AZURE_AUTOSCALING_MIN_SIZE" envDefault:"-1"`
-	AzureAutoscalingMaxSize int `env:"AZURE_AUTOSCALING_MAX_SIZE" envDefault:"-1"`
+	AzureAutoscalingMaxSize int `env:"AZURE_AUTOSCALING_MAX_SIZE"`
 }
 
 func (r RuntimeConfig) GroupKeyAndID() (string, string) {

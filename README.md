@@ -143,7 +143,10 @@ Additional optional environment variables:
 - `AUTOSCALING_MAX_CREATE` (defaults to 1) - the maximum number of VM instances the utility is allowed to create in a single run;
 - `AUTOSCALING_SCALE_DOWN_DELAY` (defaults to 0) - the number of minutes a worker must be registered to Spacelift before its eligible to be scaled in;
 - `AZURE_AUTOSCALING_MIN_SIZE` (optional) - the minimum number of VM instances the autoscaler should maintain in the VMSS. If not set, defaults to 0;
-- `AZURE_AUTOSCALING_MAX_SIZE` (optional) - the maximum number of VM instances the autoscaler can scale up to in the VMSS. If not set, defaults to 2x the current VMSS capacity;
+
+Additional required environment variables for Azure:
+
+- `AZURE_AUTOSCALING_MAX_SIZE` (required) - the maximum number of VM instances the autoscaler can scale up to in the VMSS. Must be greater than 0;
 
 ### Azure Authentication
 

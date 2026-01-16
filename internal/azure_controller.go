@@ -233,6 +233,11 @@ func NewAzureController(ctx context.Context, cfg *RuntimeConfig) (*AzureControll
 		return nil, err
 	}
 
+	// Validate that AzureAutoscalingMaxSize is provided
+	if cfg.AzureAutoscalingMaxSize <= 0 {
+		return nil, fmt.Errorf("AZURE_AUTOSCALING_MAX_SIZE environment variable is required and must be greater than 0")
+	}
+
 	return &AzureController{
 		Controller: Controller{
 			Spacelift:             spaceliftClient,
@@ -342,11 +347,8 @@ func (c *AzureController) GetAutoscalingGroup(ctx context.Context) (out *AutoSca
 		out.MinSize = 0
 	}
 
-	if c.AzureMaxSize > 0 {
-		out.MaxSize = c.AzureMaxSize
-	} else {
-		out.MaxSize = skuCapacity * 2
-	}
+	// AzureMaxSize is required and validated during controller initialization
+	out.MaxSize = c.AzureMaxSize
 
 	for _, vm := range vms {
 		if vm.InstanceID == nil {
