@@ -233,9 +233,19 @@ func NewAzureController(ctx context.Context, cfg *RuntimeConfig) (*AzureControll
 		return nil, err
 	}
 
-	// Validate that AzureAutoscalingMaxSize is provided
+	// Validate that AzureAutoscalingMaxSize is provided and valid
 	if cfg.AzureAutoscalingMaxSize <= 0 {
 		return nil, fmt.Errorf("AZURE_AUTOSCALING_MAX_SIZE environment variable is required and must be greater than 0")
+	}
+
+	// Validate that max size is at least equal to min size
+	minSize := cfg.AzureAutoscalingMinSize
+	if minSize < 0 {
+		minSize = 0 // Default min size is 0
+	}
+	if cfg.AzureAutoscalingMaxSize < minSize {
+		return nil, fmt.Errorf("AZURE_AUTOSCALING_MAX_SIZE (%d) must be greater than or equal to AZURE_AUTOSCALING_MIN_SIZE (%d)",
+			cfg.AzureAutoscalingMaxSize, minSize)
 	}
 
 	return &AzureController{
