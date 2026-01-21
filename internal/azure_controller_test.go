@@ -91,6 +91,8 @@ func setupAzureController() (*internal.AzureController, *MockAzureCompute, *Mock
 		KeyVault:               mockKeyVault,
 		AzureResourceGroupName: azureResourceGroupName,
 		AzureVMSSName:          azureVMSSName,
+		AzureMinSize:           0,
+		AzureMaxSize:           6,
 	}
 
 	return controller, mockCompute, mockKeyVault, mockSpacelift
