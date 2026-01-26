@@ -157,6 +157,11 @@ func (s AutoScaler) Scale(ctx context.Context, cfg RuntimeConfig) error {
 
 	if decision.ScalingDirection == ScalingDirectionNone {
 		logger.Info("not scaling the ASG")
+
+		if error_count > 0 {
+			return fmt.Errorf("encountered %d errors", error_count)
+		}
+
 		return nil
 	}
 
@@ -164,7 +169,12 @@ func (s AutoScaler) Scale(ctx context.Context, cfg RuntimeConfig) error {
 		logger.With("instances", decision.ScalingSize).Info("scaling up the ASG")
 
 		if err := s.controller.ScaleUpASG(ctx, asg.DesiredCapacity+decision.ScalingSize); err != nil {
-			return fmt.Errorf("could not scale up ASG: %w", err)
+			logger.Error("could not scale up ASG: %w", "error", err)
+			error_count++
+		}
+
+		if error_count > 0 {
+			return fmt.Errorf("encountered %d errors during scale-up", error_count)
 		}
 
 		return nil
