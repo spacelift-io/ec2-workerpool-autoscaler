@@ -26,8 +26,8 @@ type AzureController struct {
 	// Configuration.
 	AzureResourceGroupName string
 	AzureVMSSName          string
-	AzureMinSize           int
-	AzureMaxSize           int
+	AzureMinSize           uint
+	AzureMaxSize           uint
 }
 
 // azureComputeClient wraps the Azure Compute SDK client to implement the AzureCompute interface.
@@ -227,11 +227,6 @@ func NewAzureController(ctx context.Context, cfg *RuntimeConfig) (ControllerInte
 		return nil, err
 	}
 
-	// Validate that AutoscalingMaxSize is positive (notEmpty rejects 0, this rejects negative)
-	if cfg.AutoscalingMaxSize <= 0 {
-		return nil, fmt.Errorf("AUTOSCALING_MAX_SIZE environment variable is required and must be greater than 0")
-	}
-
 	// Validate that max size is at least equal to min size
 	if cfg.AutoscalingMaxSize < cfg.AutoscalingMinSize {
 		return nil, fmt.Errorf("AUTOSCALING_MAX_SIZE (%d) must be greater than or equal to AUTOSCALING_MIN_SIZE (%d)",
@@ -341,8 +336,8 @@ func (c *AzureController) GetAutoscalingGroup(ctx context.Context) (out *AutoSca
 
 	// Use configured min/max from environment variables
 	// Min size defaults to 0, max size is required and validated during controller initialization
-	out.MinSize = c.AzureMinSize
-	out.MaxSize = c.AzureMaxSize
+	out.MinSize = int(c.AzureMinSize)
+	out.MaxSize = int(c.AzureMaxSize)
 
 	for _, vm := range vms {
 		if vm.InstanceID == nil {

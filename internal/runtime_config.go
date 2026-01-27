@@ -29,8 +29,8 @@ type RuntimeConfig struct {
 
 	// Non-AWS fields (Azure, GCP, etc.) - use nonAwsEnv tag
 	// AWS ASG has built-in min/max; other platforms need these from env vars
-	AutoscalingMinSize int `nonAwsEnv:"AUTOSCALING_MIN_SIZE" envDefault:"0"`
-	AutoscalingMaxSize int `nonAwsEnv:"AUTOSCALING_MAX_SIZE,notEmpty"`
+	AutoscalingMinSize uint `nonAwsEnv:"AUTOSCALING_MIN_SIZE" envDefault:"0"`
+	AutoscalingMaxSize uint `nonAwsEnv:"AUTOSCALING_MAX_SIZE,notEmpty"`
 
 	// Azure-specific fields - use azEnv tag
 	AzureVMSSResourceID string `azEnv:"AZURE_VMSS_RESOURCE_ID,notEmpty"`
