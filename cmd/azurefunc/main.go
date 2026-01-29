@@ -12,6 +12,7 @@ import (
 	"time"
 
 	cmdinternal "github.com/spacelift-io/awsautoscalr/cmd/internal"
+	spaceliftinternal "github.com/spacelift-io/awsautoscalr/internal"
 )
 
 // Azure Functions custom handler for the Spacelift autoscaler.
@@ -23,6 +24,13 @@ import (
 
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+
+	// Parse config at startup - fail fast on misconfiguration
+	var cfg spaceliftinternal.RuntimeConfig
+	if err := cfg.Parse(spaceliftinternal.PlatformAzure); err != nil {
+		logger.Error("failed to parse configuration", "error", err)
+		os.Exit(1)
+	}
 
 	// Create a context that listens for shutdown signals
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -36,7 +44,7 @@ func main() {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/AutoscalerTimer", func(w http.ResponseWriter, r *http.Request) {
-		handleAutoscaler(w, r, logger)
+		handleAutoscaler(w, r, logger, &cfg)
 	})
 
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
@@ -87,7 +95,7 @@ func main() {
 	logger.Info("Server stopped gracefully")
 }
 
-func handleAutoscaler(w http.ResponseWriter, r *http.Request, logger *slog.Logger) {
+func handleAutoscaler(w http.ResponseWriter, r *http.Request, logger *slog.Logger, cfg *spaceliftinternal.RuntimeConfig) {
 	startTime := time.Now()
 	ctx := r.Context()
 
@@ -98,7 +106,7 @@ func handleAutoscaler(w http.ResponseWriter, r *http.Request, logger *slog.Logge
 
 	logger.Info("Autoscaler invoked")
 
-	if err := cmdinternal.Handle(ctx, logger); err != nil {
+	if err := cmdinternal.Handle(ctx, logger, cfg, spaceliftinternal.NewAzureController); err != nil {
 		logger.Error("autoscaling failed", "error", err, "duration", time.Since(startTime))
 
 		w.Header().Set("Content-Type", "application/json")

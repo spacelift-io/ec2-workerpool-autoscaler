@@ -129,24 +129,20 @@ The Azure Function release artifacts are versioned and available as GitHub relea
 
 The utility requires the following environment variables to be set:
 
-- `AUTOSCALING_GROUP_ARN` - the Azure Resource ID of the VMSS to scale (format: `/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.Compute/virtualMachineScaleSets/{vmssName}`);
-- `AUTOSCALING_REGION` - can be set to any value for Azure (kept for compatibility, not used);
+- `AZURE_VMSS_RESOURCE_ID` - the Azure Resource ID of the VMSS to scale (format: `/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.Compute/virtualMachineScaleSets/{vmssName}`);
+- `AUTOSCALING_MAX_SIZE` (required) - the maximum number of VM instances the autoscaler can scale up to in the VMSS. Must be greater than 0;
 - `SPACELIFT_API_KEY_ID` - the ID of the Spacelift [API key](https://docs.spacelift.io/integrations/api#spacelift-api-key-token) to use for authentication;
+- `SPACELIFT_API_KEY_SECRET_NAME` - the name of the secret in Azure Key Vault containing the Spacelift API key secret;
 - `SPACELIFT_API_KEY_ENDPOINT` - the URL of the Spacelift API endpoint to use (eg. `https://demo.app.spacelift.io`);
 - `SPACELIFT_WORKER_POOL_ID` - the ID of the Spacelift worker pool to scale;
 - `AZURE_KEY_VAULT_NAME` - the name of the Azure Key Vault containing the Spacelift API key secret (just the name, not the full URL);
-- `AZURE_SECRET_NAME` - the name of the secret in Azure Key Vault containing the Spacelift API key secret;
 
 Additional optional environment variables:
 
 - `AUTOSCALING_MAX_KILL` (defaults to 1) - the maximum number of VM instances the utility is allowed to terminate in a single run;
 - `AUTOSCALING_MAX_CREATE` (defaults to 1) - the maximum number of VM instances the utility is allowed to create in a single run;
 - `AUTOSCALING_SCALE_DOWN_DELAY` (defaults to 0) - the number of minutes a worker must be registered to Spacelift before its eligible to be scaled in;
-- `AZURE_AUTOSCALING_MIN_SIZE` (optional) - the minimum number of VM instances the autoscaler should maintain in the VMSS. If not set, defaults to 0;
-
-Additional required environment variables for Azure:
-
-- `AZURE_AUTOSCALING_MAX_SIZE` (required) - the maximum number of VM instances the autoscaler can scale up to in the VMSS. Must be greater than 0;
+- `AUTOSCALING_MIN_SIZE` (optional, defaults to 0) - the minimum number of VM instances the autoscaler should maintain in the VMSS;
 
 ### Azure Authentication
 
@@ -196,7 +192,7 @@ For a Managed Identity running the autoscaler, assign:
 1. Create an Azure Key Vault or use an existing one
 2. Store your Spacelift API key secret as a secret in the Key Vault
 3. Grant the Managed Identity or Service Principal access to read secrets (using either RBAC or access policies)
-4. Set the `AZURE_KEY_VAULT_NAME` and `AZURE_SECRET_NAME` environment variables
+4. Set the `AZURE_KEY_VAULT_NAME` and `SPACELIFT_API_KEY_SECRET_NAME` environment variables
 
 ### Spacelift API Key Permissions
 
@@ -218,5 +214,5 @@ The autoscaler also supports OpenTelemetry tracing, which can be configured to s
 ### Azure-Specific Notes
 
 - **No Native Autoscaling**: The autoscaler will check for and prevent conflicts with Azure's native autoscaling. If Azure autoscaling is enabled on the VMSS, the utility will exit with an error. You must disable Azure autoscaling to use this utility.
-- **Capacity Management**: Unlike AWS ASG which has separate min/max/desired capacity, Azure VMSS uses SKU capacity. The autoscaler treats the current SKU capacity as the desired capacity and sets min to 0 and max to a high value.
+- **Capacity Management**: Unlike AWS ASG which has built-in min/max/desired capacity, Azure VMSS uses SKU capacity. The autoscaler treats the current SKU capacity as the desired capacity and uses `AUTOSCALING_MIN_SIZE` and `AUTOSCALING_MAX_SIZE` environment variables to control scaling bounds.
 - **Instance Deletion**: When scaling down, Azure automatically adjusts the VMSS capacity when an instance is deleted, so there's no separate "detach" operation like in AWS.

@@ -12,12 +12,20 @@ import (
 	"go.opentelemetry.io/otel/propagation"
 
 	"github.com/spacelift-io/awsautoscalr/cmd/internal"
+	spaceliftinternal "github.com/spacelift-io/awsautoscalr/internal"
 	"github.com/spacelift-io/awsautoscalr/internal/tracing"
 )
 
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	ctx := context.Background()
+
+	// Parse config at startup - fail fast on misconfiguration
+	var cfg spaceliftinternal.RuntimeConfig
+	if err := cfg.Parse(spaceliftinternal.PlatformAWS); err != nil {
+		logger.Error("failed to parse configuration", "error", err)
+		os.Exit(1)
+	}
 
 	tp := tracing.InitOtelXrayTracer(ctx, logger, true)
 	defer func(ctx context.Context) {
@@ -40,7 +48,7 @@ func main() {
 			logger = logger.With("aws_request_id", lc.AwsRequestID)
 		}
 
-		return internal.Handle(ctx, logger)
+		return internal.Handle(ctx, logger, &cfg, spaceliftinternal.NewAWSController)
 	}, opts...))
 }
 
