@@ -35,7 +35,6 @@ type RuntimeConfig struct {
 	// Azure-specific fields - use azEnv tag
 	AzureVMSSResourceID string `azEnv:"AZURE_VMSS_RESOURCE_ID,notEmpty"`
 	AzureKeyVaultName   string `azEnv:"AZURE_KEY_VAULT_NAME,notEmpty"`
-	AzureSecretName     string `azEnv:"AZURE_SECRET_NAME,notEmpty"`
 }
 
 // Parse parses environment variables into the config for the specified platform.

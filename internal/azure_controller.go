@@ -201,9 +201,9 @@ func NewAzureController(ctx context.Context, cfg *RuntimeConfig) (ControllerInte
 	}
 
 	// Create Azure Key Vault client using dedicated config fields
-	// Note: AzureKeyVaultName and AzureSecretName are validated at parse time via azEnv tags
+	// Note: AzureKeyVaultName is validated at parse time via azEnv tag, SpaceliftAPISecretName via env tag
 	vaultURL := fmt.Sprintf("https://%s.vault.azure.net", cfg.AzureKeyVaultName)
-	secretName := cfg.AzureSecretName
+	secretName := cfg.SpaceliftAPISecretName
 
 	kvClient, err := azsecrets.NewClient(vaultURL, cred, nil)
 	if err != nil {

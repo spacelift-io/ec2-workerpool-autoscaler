@@ -132,10 +132,10 @@ The utility requires the following environment variables to be set:
 - `AZURE_VMSS_RESOURCE_ID` - the Azure Resource ID of the VMSS to scale (format: `/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.Compute/virtualMachineScaleSets/{vmssName}`);
 - `AUTOSCALING_MAX_SIZE` (required) - the maximum number of VM instances the autoscaler can scale up to in the VMSS. Must be greater than 0;
 - `SPACELIFT_API_KEY_ID` - the ID of the Spacelift [API key](https://docs.spacelift.io/integrations/api#spacelift-api-key-token) to use for authentication;
+- `SPACELIFT_API_KEY_SECRET_NAME` - the name of the secret in Azure Key Vault containing the Spacelift API key secret;
 - `SPACELIFT_API_KEY_ENDPOINT` - the URL of the Spacelift API endpoint to use (eg. `https://demo.app.spacelift.io`);
 - `SPACELIFT_WORKER_POOL_ID` - the ID of the Spacelift worker pool to scale;
 - `AZURE_KEY_VAULT_NAME` - the name of the Azure Key Vault containing the Spacelift API key secret (just the name, not the full URL);
-- `AZURE_SECRET_NAME` - the name of the secret in Azure Key Vault containing the Spacelift API key secret;
 
 Additional optional environment variables:
 
@@ -192,7 +192,7 @@ For a Managed Identity running the autoscaler, assign:
 1. Create an Azure Key Vault or use an existing one
 2. Store your Spacelift API key secret as a secret in the Key Vault
 3. Grant the Managed Identity or Service Principal access to read secrets (using either RBAC or access policies)
-4. Set the `AZURE_KEY_VAULT_NAME` and `AZURE_SECRET_NAME` environment variables
+4. Set the `AZURE_KEY_VAULT_NAME` and `SPACELIFT_API_KEY_SECRET_NAME` environment variables
 
 ### Spacelift API Key Permissions
 
