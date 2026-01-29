@@ -27,10 +27,10 @@ type RuntimeConfig struct {
 	AutoscalingGroupARN string `awsEnv:"AUTOSCALING_GROUP_ARN,notEmpty"`
 	AutoscalingRegion   string `awsEnv:"AUTOSCALING_REGION,notEmpty"`
 
-	// Non-AWS fields (Azure, GCP, etc.) - use nonAwsEnv tag
+	// Min/Max size fields (Azure, GCP, etc.) - use minMaxEnv tag
 	// AWS ASG has built-in min/max; other platforms need these from env vars
-	AutoscalingMinSize uint `nonAwsEnv:"AUTOSCALING_MIN_SIZE" envDefault:"0"`
-	AutoscalingMaxSize uint `nonAwsEnv:"AUTOSCALING_MAX_SIZE,notEmpty"`
+	AutoscalingMinSize uint `minMaxEnv:"AUTOSCALING_MIN_SIZE" envDefault:"0"`
+	AutoscalingMaxSize uint `minMaxEnv:"AUTOSCALING_MAX_SIZE,notEmpty"`
 
 	// Azure-specific fields - use azEnv tag
 	AzureVMSSResourceID string `azEnv:"AZURE_VMSS_RESOURCE_ID,notEmpty"`
@@ -50,7 +50,7 @@ func (r *RuntimeConfig) Parse(platform Platform) error {
 	case PlatformAWS:
 		tags = append(tags, "awsEnv")
 	case PlatformAzure:
-		tags = append(tags, "azEnv", "nonAwsEnv")
+		tags = append(tags, "azEnv", "minMaxEnv")
 	}
 
 	for _, tag := range tags {
