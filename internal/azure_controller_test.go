@@ -305,7 +305,13 @@ func TestAzureGetAutoscalingGroup_Success_ReturnsGroup(t *testing.T) {
 		{
 			InstanceID: stringPtr("vm-2"),
 			Properties: &armcompute.VirtualMachineScaleSetVMProperties{
-				ProvisioningState: stringPtr("Succeeded"),
+				ProvisioningState: stringPtr("Creating"),
+			},
+		},
+		{
+			InstanceID: stringPtr("vm-3"),
+			Properties: &armcompute.VirtualMachineScaleSetVMProperties{
+				ProvisioningState: stringPtr("Deleting"),
 			},
 		},
 	}
@@ -324,7 +330,12 @@ func TestAzureGetAutoscalingGroup_Success_ReturnsGroup(t *testing.T) {
 	require.Equal(t, 3, group.DesiredCapacity)
 	require.Equal(t, 0, group.MinSize)
 	require.Equal(t, 6, group.MaxSize)
-	require.Len(t, group.Instances, 2)
+	require.Len(t, group.Instances, 3)
+
+	// Verify lifecycle states are mapped correctly
+	require.Equal(t, internal.LifecycleStateInService, group.Instances[0].LifecycleState)
+	require.Equal(t, "Creating", group.Instances[1].LifecycleState)
+	require.Equal(t, internal.LifecycleStateTerminating, group.Instances[2].LifecycleState)
 }
 
 // GetWorkerPool tests - verifies Spacelift worker pool integration (cloud-agnostic)

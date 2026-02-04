@@ -30,6 +30,34 @@ type AzureController struct {
 	AzureMaxSize           int
 }
 
+// mapAzureProvisioningStateToLifecycleState maps Azure ProvisioningState values to the
+// LifecycleState constants expected by state.go.
+//
+// Azure ProvisioningState values:
+//   - Succeeded: The VM has been successfully provisioned and is running.
+//   - Creating: The VM is being created.
+//   - Updating: The VM is being updated.
+//   - Deleting: The VM is being deleted.
+//   - Failed: The VM provisioning failed.
+//   - Migrating: The VM is being migrated.
+//   - Canceled: The VM operation was canceled.
+//
+// See: https://docs.microsoft.com/en-us/azure/virtual-machines/states-lifecycle
+func mapAzureProvisioningStateToLifecycleState(provisioningState string) string {
+	switch provisioningState {
+	case "Succeeded":
+		// Succeeded means the VM is fully provisioned and running.
+		return LifecycleStateInService
+	case "Deleting":
+		// Deleting means the VM is being terminated.
+		return LifecycleStateTerminating
+	default:
+		// For other transitional states (Creating, Updating, Failed, etc.),
+		// keep the original value. These instances are not yet fully in-service.
+		return provisioningState
+	}
+}
+
 // azureComputeClient wraps the Azure Compute SDK client to implement the AzureCompute interface.
 type azureComputeClient struct {
 	vmssClient               *armcompute.VirtualMachineScaleSetsClient
@@ -371,10 +399,11 @@ func (c *AzureController) GetAutoscalingGroup(ctx context.Context) (out *AutoSca
 		if vm.Properties != nil && vm.Properties.ProvisioningState != nil {
 			provisioningState = *vm.Properties.ProvisioningState
 		}
+		lifecycleState := mapAzureProvisioningStateToLifecycleState(provisioningState)
 
 		out.Instances = append(out.Instances, Instance{
 			ID:             *vm.InstanceID,
-			LifecycleState: provisioningState,
+			LifecycleState: lifecycleState,
 		})
 	}
 
