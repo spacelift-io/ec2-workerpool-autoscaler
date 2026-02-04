@@ -22,8 +22,46 @@ import (
 // For timer triggers, Azure Functions sends a POST request to /{functionName}
 // with invocation metadata in the request body.
 
+// migrateDeprecatedEnvVars checks for deprecated environment variable names
+// and copies their values to the new names, logging deprecation warnings.
+func migrateDeprecatedEnvVars(logger *slog.Logger) {
+	deprecatedVars := []struct {
+		oldName string
+		newName string
+	}{
+		{"AZURE_AUTOSCALING_MIN_SIZE", "AUTOSCALING_MIN_SIZE"},
+		{"AZURE_AUTOSCALING_MAX_SIZE", "AUTOSCALING_MAX_SIZE"},
+		{"AZURE_SECRET_NAME", "SPACELIFT_API_KEY_SECRET_NAME"},
+		{"AUTOSCALING_GROUP_ARN", "AZURE_VMSS_RESOURCE_ID"},
+	}
+
+	for _, v := range deprecatedVars {
+		oldVal := os.Getenv(v.oldName)
+		if oldVal == "" {
+			continue
+		}
+
+		newVal := os.Getenv(v.newName)
+		if newVal == "" {
+			os.Setenv(v.newName, oldVal)
+			logger.Warn("deprecated environment variable used",
+				"old", v.oldName,
+				"new", v.newName,
+				"action", "Please update to use the new variable name")
+		} else {
+			logger.Warn("deprecated environment variable ignored",
+				"old", v.oldName,
+				"new", v.newName,
+				"reason", "new variable is already set")
+		}
+	}
+}
+
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+
+	// Migrate deprecated environment variables before parsing config
+	migrateDeprecatedEnvVars(logger)
 
 	// Parse config at startup - fail fast on misconfiguration
 	var cfg spaceliftinternal.RuntimeConfig
