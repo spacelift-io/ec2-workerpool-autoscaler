@@ -12,6 +12,7 @@ import (
 	"time"
 
 	cmdinternal "github.com/spacelift-io/awsautoscalr/cmd/internal"
+	spaceliftinternal "github.com/spacelift-io/awsautoscalr/internal"
 )
 
 // Azure Functions custom handler for the Spacelift autoscaler.
@@ -21,8 +22,53 @@ import (
 // For timer triggers, Azure Functions sends a POST request to /{functionName}
 // with invocation metadata in the request body.
 
+// migrateDeprecatedEnvVars checks for deprecated environment variable names
+// and copies their values to the new names, logging deprecation warnings.
+func migrateDeprecatedEnvVars(logger *slog.Logger) {
+	deprecatedVars := []struct {
+		oldName string
+		newName string
+	}{
+		{"AZURE_AUTOSCALING_MIN_SIZE", "AUTOSCALING_MIN_SIZE"},
+		{"AZURE_AUTOSCALING_MAX_SIZE", "AUTOSCALING_MAX_SIZE"},
+		{"AZURE_SECRET_NAME", "SPACELIFT_API_KEY_SECRET_NAME"},
+		{"AUTOSCALING_GROUP_ARN", "AZURE_VMSS_RESOURCE_ID"},
+	}
+
+	for _, v := range deprecatedVars {
+		oldVal := os.Getenv(v.oldName)
+		if oldVal == "" {
+			continue
+		}
+
+		newVal := os.Getenv(v.newName)
+		if newVal == "" {
+			os.Setenv(v.newName, oldVal)
+			logger.Warn("deprecated environment variable used",
+				"old", v.oldName,
+				"new", v.newName,
+				"action", "Please update to use the new variable name")
+		} else {
+			logger.Warn("deprecated environment variable ignored",
+				"old", v.oldName,
+				"new", v.newName,
+				"reason", "new variable is already set")
+		}
+	}
+}
+
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+
+	// Migrate deprecated environment variables before parsing config
+	migrateDeprecatedEnvVars(logger)
+
+	// Parse config at startup - fail fast on misconfiguration
+	var cfg spaceliftinternal.RuntimeConfig
+	if err := cfg.Parse(spaceliftinternal.PlatformAzure); err != nil {
+		logger.Error("failed to parse configuration", "error", err)
+		os.Exit(1)
+	}
 
 	// Create a context that listens for shutdown signals
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -36,7 +82,7 @@ func main() {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/AutoscalerTimer", func(w http.ResponseWriter, r *http.Request) {
-		handleAutoscaler(w, r, logger)
+		handleAutoscaler(w, r, logger, &cfg)
 	})
 
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
@@ -87,7 +133,7 @@ func main() {
 	logger.Info("Server stopped gracefully")
 }
 
-func handleAutoscaler(w http.ResponseWriter, r *http.Request, logger *slog.Logger) {
+func handleAutoscaler(w http.ResponseWriter, r *http.Request, logger *slog.Logger, cfg *spaceliftinternal.RuntimeConfig) {
 	startTime := time.Now()
 	ctx := r.Context()
 
@@ -98,7 +144,7 @@ func handleAutoscaler(w http.ResponseWriter, r *http.Request, logger *slog.Logge
 
 	logger.Info("Autoscaler invoked")
 
-	if err := cmdinternal.Handle(ctx, logger); err != nil {
+	if err := cmdinternal.Handle(ctx, logger, cfg, spaceliftinternal.NewAzureController); err != nil {
 		logger.Error("autoscaling failed", "error", err, "duration", time.Since(startTime))
 
 		w.Header().Set("Content-Type", "application/json")

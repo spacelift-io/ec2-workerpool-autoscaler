@@ -26,8 +26,8 @@ type AzureController struct {
 	// Configuration.
 	AzureResourceGroupName string
 	AzureVMSSName          string
-	AzureMinSize           int
-	AzureMaxSize           int
+	AzureMinSize           uint
+	AzureMaxSize           uint
 }
 
 // mapAzureProvisioningStateToLifecycleState maps Azure ProvisioningState values to the
@@ -182,7 +182,7 @@ func checkForAutoscaleSettings(ctx context.Context, subscriptionID, resourceGrou
 }
 
 // NewAzureController creates a new Azure controller instance.
-func NewAzureController(ctx context.Context, cfg *RuntimeConfig) (*AzureController, error) {
+func NewAzureController(ctx context.Context, cfg *RuntimeConfig) (ControllerInterface, error) {
 	// Create Azure credential
 	cred, err := azidentity.NewDefaultAzureCredential(nil)
 	if err != nil {
@@ -191,7 +191,7 @@ func NewAzureController(ctx context.Context, cfg *RuntimeConfig) (*AzureControll
 
 	// Parse the VMSS resource ID to extract resource group and VMSS name
 	// Expected format: /subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.Compute/virtualMachineScaleSets/{vmssName}
-	resourceID, err := arm.ParseResourceID(cfg.AutoscalingGroupARN)
+	resourceID, err := arm.ParseResourceID(cfg.AzureVMSSResourceID)
 	if err != nil {
 		return nil, fmt.Errorf("could not parse Azure VMSS resource ID: %w", err)
 	}
@@ -207,7 +207,7 @@ func NewAzureController(ctx context.Context, cfg *RuntimeConfig) (*AzureControll
 
 	// Check for Azure autoscale settings that would conflict with manual scaling
 	// We use the full resource ID for comparison with autoscale target URIs
-	vmssResourceID := cfg.AutoscalingGroupARN
+	vmssResourceID := cfg.AzureVMSSResourceID
 	if err := checkForAutoscaleSettings(ctx, subscriptionID, resourceGroupName, vmssResourceID, cred); err != nil {
 		return nil, err
 	}
@@ -229,15 +229,9 @@ func NewAzureController(ctx context.Context, cfg *RuntimeConfig) (*AzureControll
 	}
 
 	// Create Azure Key Vault client using dedicated config fields
-	if cfg.AzureKeyVaultName == "" {
-		return nil, fmt.Errorf("AZURE_KEY_VAULT_NAME environment variable is required")
-	}
-	if cfg.AzureSecretName == "" {
-		return nil, fmt.Errorf("AZURE_SECRET_NAME environment variable is required")
-	}
-
+	// Note: AzureKeyVaultName is validated at parse time via azEnv tag, SpaceliftAPISecretName via env tag
 	vaultURL := fmt.Sprintf("https://%s.vault.azure.net", cfg.AzureKeyVaultName)
-	secretName := cfg.AzureSecretName
+	secretName := cfg.SpaceliftAPISecretName
 
 	kvClient, err := azsecrets.NewClient(vaultURL, cred, nil)
 	if err != nil {
@@ -261,19 +255,10 @@ func NewAzureController(ctx context.Context, cfg *RuntimeConfig) (*AzureControll
 		return nil, err
 	}
 
-	// Validate that AzureAutoscalingMaxSize is provided and valid
-	if cfg.AzureAutoscalingMaxSize <= 0 {
-		return nil, fmt.Errorf("AZURE_AUTOSCALING_MAX_SIZE environment variable is required and must be greater than 0")
-	}
-
 	// Validate that max size is at least equal to min size
-	minSize := cfg.AzureAutoscalingMinSize
-	if minSize < 0 {
-		minSize = 0 // Default min size is 0
-	}
-	if cfg.AzureAutoscalingMaxSize < minSize {
-		return nil, fmt.Errorf("AZURE_AUTOSCALING_MAX_SIZE (%d) must be greater than or equal to AZURE_AUTOSCALING_MIN_SIZE (%d)",
-			cfg.AzureAutoscalingMaxSize, minSize)
+	if cfg.AutoscalingMaxSize < cfg.AutoscalingMinSize {
+		return nil, fmt.Errorf("AUTOSCALING_MAX_SIZE (%d) must be greater than or equal to AUTOSCALING_MIN_SIZE (%d)",
+			cfg.AutoscalingMaxSize, cfg.AutoscalingMinSize)
 	}
 
 	return &AzureController{
@@ -286,8 +271,8 @@ func NewAzureController(ctx context.Context, cfg *RuntimeConfig) (*AzureControll
 		KeyVault:               keyVaultClient,
 		AzureResourceGroupName: resourceGroupName,
 		AzureVMSSName:          vmssName,
-		AzureMinSize:           cfg.AzureAutoscalingMinSize,
-		AzureMaxSize:           cfg.AzureAutoscalingMaxSize,
+		AzureMinSize:           cfg.AutoscalingMinSize,
+		AzureMaxSize:           cfg.AutoscalingMaxSize,
 	}, nil
 }
 
@@ -377,16 +362,10 @@ func (c *AzureController) GetAutoscalingGroup(ctx context.Context) (out *AutoSca
 		out.DesiredCapacity = skuCapacity
 	}
 
-	// Use configured min/max if provided, otherwise use defaults
-	if c.AzureMinSize > 0 {
-		out.MinSize = c.AzureMinSize
-	} else {
-		// Default: 0
-		out.MinSize = 0
-	}
-
-	// AzureMaxSize is required and validated during controller initialization
-	out.MaxSize = c.AzureMaxSize
+	// Use configured min/max from environment variables
+	// Min size defaults to 0, max size is required and validated during controller initialization
+	out.MinSize = int(c.AzureMinSize)
+	out.MaxSize = int(c.AzureMaxSize)
 
 	for _, vm := range vms {
 		if vm.InstanceID == nil {

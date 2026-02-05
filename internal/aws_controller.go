@@ -29,7 +29,7 @@ type AWSController struct {
 }
 
 // NewAWSController creates a new AWS controller instance.
-func NewAWSController(ctx context.Context, cfg *RuntimeConfig) (*AWSController, error) {
+func NewAWSController(ctx context.Context, cfg *RuntimeConfig) (ControllerInterface, error) {
 	awsConfig, err := config.LoadDefaultConfig(ctx, config.WithRegion(cfg.AutoscalingRegion))
 	if err != nil {
 		return nil, fmt.Errorf("could not load AWS configuration: %w", err)
