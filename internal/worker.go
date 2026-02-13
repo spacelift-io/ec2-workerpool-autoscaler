@@ -2,13 +2,7 @@ package internal
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
-)
-
-const (
-	asgKey      = "asg_id"
-	instanceKey = "instance_id"
 )
 
 type GroupID string
@@ -22,12 +16,6 @@ type Worker struct {
 	Metadata  string `graphql:"metadata" json:"metadata"`
 }
 
-func (w *Worker) InstanceIdentity() (GroupID, InstanceID, error) {
-	groupID, groupErr := w.metadataValue(asgKey)
-	instanceID, instanceErr := w.metadataValue(instanceKey)
-	return GroupID(groupID), InstanceID(instanceID), errors.Join(groupErr, instanceErr)
-}
-
 func (w *Worker) metadata() (map[string]string, error) {
 	out := make(map[string]string)
 
@@ -38,7 +26,8 @@ func (w *Worker) metadata() (map[string]string, error) {
 	return out, nil
 }
 
-func (w *Worker) metadataValue(key string) (string, error) {
+// MetadataValue returns the value of a metadata key from the worker's metadata JSON.
+func (w *Worker) MetadataValue(key string) (string, error) {
 	metadata, err := w.metadata()
 	if err != nil {
 		return "", err

@@ -8,28 +8,37 @@ import (
 	"github.com/spacelift-io/awsautoscalr/internal"
 )
 
-func TestWorker_InstanceIdentity_NoMetadata_ReturnsError(t *testing.T) {
+func TestWorker_MetadataValue_NoMetadata_ReturnsError(t *testing.T) {
 	sut := &internal.Worker{
 		Metadata: "{}",
 	}
 
-	groupID, instanceID, err := sut.InstanceIdentity()
+	value, err := sut.MetadataValue("some_key")
 
 	require.Error(t, err)
-	require.ErrorContains(t, err, "metadata asg_id not present")
-	require.ErrorContains(t, err, "metadata instance_id not present")
-	require.Empty(t, groupID)
-	require.Empty(t, instanceID)
+	require.ErrorContains(t, err, "metadata some_key not present")
+	require.Empty(t, value)
 }
 
-func TestWorker_InstanceIdentity_ValidMetadata_ReturnsGroupAndInstanceIDs(t *testing.T) {
+func TestWorker_MetadataValue_ValidMetadata_ReturnsValue(t *testing.T) {
 	sut := &internal.Worker{
-		Metadata: `{"asg_id": "group", "instance_id": "instance"}`,
+		Metadata: `{"some_key": "some_value"}`,
 	}
 
-	groupID, instanceID, err := sut.InstanceIdentity()
+	value, err := sut.MetadataValue("some_key")
 
 	require.NoError(t, err)
-	require.Equal(t, internal.GroupID("group"), groupID)
-	require.Equal(t, internal.InstanceID("instance"), instanceID)
+	require.Equal(t, "some_value", value)
+}
+
+func TestWorker_MetadataValue_InvalidJSON_ReturnsError(t *testing.T) {
+	sut := &internal.Worker{
+		Metadata: "not valid json",
+	}
+
+	value, err := sut.MetadataValue("some_key")
+
+	require.Error(t, err)
+	require.ErrorContains(t, err, "invalid instance metadata")
+	require.Empty(t, value)
 }

@@ -1,6 +1,6 @@
 package internal
 
-import "github.com/caarlos0/env/v9"
+import "github.com/caarlos0/env/v11"
 
 // Platform represents the cloud platform being used.
 type Platform string
@@ -8,6 +8,7 @@ type Platform string
 const (
 	PlatformAWS   Platform = "aws"
 	PlatformAzure Platform = "azure"
+	PlatformGCP   Platform = "gcp"
 )
 
 type RuntimeConfig struct {
@@ -29,12 +30,15 @@ type RuntimeConfig struct {
 
 	// Min/Max size fields (Azure, GCP, etc.) - use minMaxEnv tag
 	// AWS ASG has built-in min/max; other platforms need these from env vars
-	AutoscalingMinSize uint `minMaxEnv:"AUTOSCALING_MIN_SIZE" envDefault:"0"`
+	AutoscalingMinSize uint `minMaxEnv:"AUTOSCALING_MIN_SIZE" minMaxEnvDefault:"0"`
 	AutoscalingMaxSize uint `minMaxEnv:"AUTOSCALING_MAX_SIZE,notEmpty"`
 
 	// Azure-specific fields - use azEnv tag
 	AzureVMSSResourceID string `azEnv:"AZURE_VMSS_RESOURCE_ID,notEmpty"`
 	AzureKeyVaultName   string `azEnv:"AZURE_KEY_VAULT_NAME,notEmpty"`
+
+	// GCP-specific fields - use gcpEnv tag
+	GCPIGMSelfLink string `gcpEnv:"GCP_IGM_SELF_LINK,notEmpty"`
 }
 
 // Parse parses environment variables into the config for the specified platform.
@@ -50,10 +54,15 @@ func (r *RuntimeConfig) Parse(platform Platform) error {
 		tags = append(tags, "awsEnv")
 	case PlatformAzure:
 		tags = append(tags, "azEnv", "minMaxEnv")
+	case PlatformGCP:
+		tags = append(tags, "gcpEnv", "minMaxEnv")
 	}
 
 	for _, tag := range tags {
-		if err := env.ParseWithOptions(r, env.Options{TagName: tag}); err != nil {
+		if err := env.ParseWithOptions(r, env.Options{
+			TagName:             tag,
+			DefaultValueTagName: tag + "Default",
+		}); err != nil {
 			if aggErr, ok := err.(env.AggregateError); ok {
 				allErrors.Errors = append(allErrors.Errors, aggErr.Errors...)
 			} else {
@@ -70,6 +79,9 @@ func (r *RuntimeConfig) Parse(platform Platform) error {
 
 // GroupKeyAndID returns the platform-appropriate log key and resource ID.
 func (r RuntimeConfig) GroupKeyAndID() (string, string) {
+	if r.GCPIGMSelfLink != "" {
+		return "igm_self_link", r.GCPIGMSelfLink
+	}
 	if r.AzureVMSSResourceID != "" {
 		return "vmss_resource_id", r.AzureVMSSResourceID
 	}
