@@ -17,6 +17,7 @@ func Handle(ctx context.Context, logger *slog.Logger, cfg *internal.RuntimeConfi
 	if err != nil {
 		return fmt.Errorf("could not create controller: %w", err)
 	}
+	defer controller.Close() // Clean up resources when done
 
 	return internal.NewAutoScaler(controller, logger).Scale(ctx, *cfg)
 }

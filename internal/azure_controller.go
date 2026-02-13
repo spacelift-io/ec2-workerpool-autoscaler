@@ -433,3 +433,19 @@ func (c *AzureController) ScaleUpASG(ctx context.Context, desiredCapacity int) (
 
 	return nil
 }
+
+// InstanceIdentity extracts the group ID and instance ID from worker metadata using Azure-specific keys.
+// Azure workers use "vmss_name" for the VMSS name and "instance_id" for the VM instance ID.
+func (c *AzureController) InstanceIdentity(worker *Worker) (GroupID, InstanceID, error) {
+	groupID, groupErr := worker.MetadataValue("vmss_name")
+	instanceID, instanceErr := worker.MetadataValue("instance_id")
+	return GroupID(groupID), InstanceID(instanceID), errors.Join(groupErr, instanceErr)
+}
+
+// Close releases resources held by the AzureController.
+// For Azure, the SDK clients don't require explicit cleanup, so this is a no-op.
+// Implemented to satisfy the ControllerInterface.
+func (c *AzureController) Close() error {
+	// Azure SDK clients don't require explicit cleanup
+	return nil
+}

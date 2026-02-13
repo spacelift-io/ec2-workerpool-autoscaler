@@ -27,8 +27,14 @@ type ControllerInterface interface {
 	GetAutoscalingGroup(ctx context.Context) (out *AutoScalingGroup, err error)
 	GetWorkerPool(ctx context.Context) (out *WorkerPool, err error)
 	DrainWorker(ctx context.Context, workerID string) (drained bool, err error)
+	// KillInstance terminates an instance and removes it from the scaling group.
+	// Implementations MUST ensure that the group's desired capacity is decremented
+	// as part of this operation (either explicitly or via platform auto-adjustment).
+	// The caller does NOT separately adjust capacity during scale-down.
 	KillInstance(ctx context.Context, instanceID string) (err error)
 	ScaleUpASG(ctx context.Context, desiredCapacity int) (err error)
+	InstanceIdentity(worker *Worker) (groupID GroupID, instanceID InstanceID, err error)
+	Close() error // Release resources when done
 }
 
 type AutoScaler struct {
@@ -59,7 +65,7 @@ func (s AutoScaler) Scale(ctx context.Context, cfg RuntimeConfig) error {
 		return fmt.Errorf("could not get autoscaling group: %w", err)
 	}
 
-	state, err := NewState(workerPool, asg, cfg, logger)
+	state, err := NewState(workerPool, asg, cfg, logger, s.controller)
 	if err != nil {
 		return fmt.Errorf("could not create state: %w", err)
 	}
@@ -77,8 +83,8 @@ func (s AutoScaler) Scale(ctx context.Context, cfg RuntimeConfig) error {
 	}
 	excessCapacity := asg.DesiredCapacity - expectedMaxCapacity
 	if excessCapacity >= sanityThreshold && asg.DesiredCapacity > asg.MinSize {
-		logger.Error("ASG desired capacity is suspiciously high, possible AWS service issue or external modification",
-			"asg_desired_capacity", asg.DesiredCapacity,
+		logger.Error("desired capacity is suspiciously high, possible cloud provider issue or external modification",
+			"desired_capacity", asg.DesiredCapacity,
 			"valid_workers", state.ValidWorkerCount(),
 			"pending_runs", workerPool.PendingRuns,
 			"expected_max_capacity", expectedMaxCapacity,
@@ -94,15 +100,15 @@ func (s AutoScaler) Scale(ctx context.Context, cfg RuntimeConfig) error {
 			saneCapacity = asg.MaxSize
 		}
 
-		logger.Warn("attempting to reset ASG desired capacity to sane value",
+		logger.Warn("attempting to reset desired capacity to sane value",
 			"current_capacity", asg.DesiredCapacity,
 			"new_capacity", saneCapacity)
 
 		if err := s.controller.ScaleUpASG(ctx, saneCapacity); err != nil {
-			logger.Error("failed to reset ASG desired capacity", "error", err)
+			logger.Error("failed to reset desired capacity", "error", err)
 			// Don't return error - continue with normal scaling logic
 		} else {
-			logger.Info("successfully reset ASG desired capacity")
+			logger.Info("successfully reset desired capacity")
 			// Update our local ASG state to reflect the change
 			asg.DesiredCapacity = saneCapacity
 		}
@@ -188,7 +194,7 @@ func (s AutoScaler) Scale(ctx context.Context, cfg RuntimeConfig) error {
 	for i := 0; i < decision.ScalingSize; i++ {
 		worker := scalableWorkers[i]
 
-		_, instanceID, _ := worker.InstanceIdentity()
+		_, instanceID, _ := s.controller.InstanceIdentity(&worker)
 
 		logger := logger.With(
 			"worker_id", worker.ID,
