@@ -28,7 +28,7 @@ func main() {
 	var factory cmdinternal.ControllerFactory
 	var platform spaceliftinternal.Platform
 
-	if os.Getenv("GCP_IGM_SELF_LINK") != "" {
+	if os.Getenv("GCP_IGM_ID") != "" {
 		// GCP platform detected
 		if err := cfg.Parse(spaceliftinternal.PlatformGCP); err != nil {
 			logger.Error("failed to parse GCP configuration", "error", err)

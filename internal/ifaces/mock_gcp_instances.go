@@ -33,29 +33,29 @@ func (_m *MockGCPInstances) Close() error {
 	return r0
 }
 
-// GetInstance provides a mock function with given fields: ctx, project, zone, instanceName
-func (_m *MockGCPInstances) GetInstance(ctx context.Context, project string, zone string, instanceName string) (*computepb.Instance, error) {
-	ret := _m.Called(ctx, project, zone, instanceName)
+// ListInstances provides a mock function with given fields: ctx, project, zone, filter
+func (_m *MockGCPInstances) ListInstances(ctx context.Context, project string, zone string, filter string) ([]*computepb.Instance, error) {
+	ret := _m.Called(ctx, project, zone, filter)
 
 	if len(ret) == 0 {
-		panic("no return value specified for GetInstance")
+		panic("no return value specified for ListInstances")
 	}
 
-	var r0 *computepb.Instance
+	var r0 []*computepb.Instance
 	var r1 error
-	if rf, ok := ret.Get(0).(func(context.Context, string, string, string) (*computepb.Instance, error)); ok {
-		return rf(ctx, project, zone, instanceName)
+	if rf, ok := ret.Get(0).(func(context.Context, string, string, string) ([]*computepb.Instance, error)); ok {
+		return rf(ctx, project, zone, filter)
 	}
-	if rf, ok := ret.Get(0).(func(context.Context, string, string, string) *computepb.Instance); ok {
-		r0 = rf(ctx, project, zone, instanceName)
+	if rf, ok := ret.Get(0).(func(context.Context, string, string, string) []*computepb.Instance); ok {
+		r0 = rf(ctx, project, zone, filter)
 	} else {
 		if ret.Get(0) != nil {
-			r0 = ret.Get(0).(*computepb.Instance)
+			r0 = ret.Get(0).([]*computepb.Instance)
 		}
 	}
 
 	if rf, ok := ret.Get(1).(func(context.Context, string, string, string) error); ok {
-		r1 = rf(ctx, project, zone, instanceName)
+		r1 = rf(ctx, project, zone, filter)
 	} else {
 		r1 = ret.Error(1)
 	}

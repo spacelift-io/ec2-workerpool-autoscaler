@@ -18,12 +18,12 @@ import (
 	"google.golang.org/api/iterator"
 )
 
-// gcpIGMSelfLinkRegex matches GCP IGM self-links in both zonal and regional formats.
+// gcpIGMIDRegex matches GCP IGM resource IDs in both zonal and regional formats.
 // Formats:
 //
 //	Zonal: projects/{project}/zones/{zone}/instanceGroupManagers/{name}
 //	Regional: projects/{project}/regions/{region}/instanceGroupManagers/{name}
-var gcpIGMSelfLinkRegex = regexp.MustCompile(`^projects/([^/]+)/(zones|regions)/([^/]+)/instanceGroupManagers/([^/]+)$`)
+var gcpIGMIDRegex = regexp.MustCompile(`^projects/([^/]+)/(zones|regions)/([^/]+)/instanceGroupManagers/([^/]+)$`)
 
 // gcpInstanceURLPrefixes are the URL prefixes that may be present in instance URLs
 // returned by the GCP API. These are stripped before storing instance IDs.
@@ -50,13 +50,13 @@ type GCPController struct {
 	Project     string
 	Location    string // Zone for zonal IGMs, region for regional IGMs
 	IGMName     string
-	IGMSelfLink string // Full resource path (e.g., projects/{project}/zones/{zone}/instanceGroupManagers/{name})
+	IGMID string // e.g., projects/{project}/zones/{zone}/instanceGroupManagers/{name}
 	IsRegional  bool
 	MinSize     uint
 	MaxSize     uint
 }
 
-// igmID holds parsed components of an IGM self-link.
+// igmID holds parsed components of an IGM resource ID.
 type igmID struct {
 	Project    string
 	Location   string // Zone or Region
@@ -69,6 +69,12 @@ type instanceURL struct {
 	Project string
 	Zone    string
 	Name    string
+}
+
+// instanceRef pairs a parsed instance URL with its original full resource path.
+type instanceRef struct {
+	parsed *instanceURL
+	fullID string
 }
 
 // gcpZonalComputeClient wraps the GCP Compute SDK client for zonal IGM operations.
@@ -92,10 +98,10 @@ type gcpInstancesClient struct {
 
 // NewGCPController creates a new GCP controller instance.
 func NewGCPController(ctx context.Context, cfg *RuntimeConfig) (ControllerInterface, error) {
-	// Parse the IGM self-link
-	parsedIGM, err := parseGCPIGMSelfLink(cfg.GCPIGMSelfLink)
+	// Parse the IGM resource ID
+	parsedIGM, err := parseGCPIGMID(cfg.GCPIGMID)
 	if err != nil {
-		return nil, fmt.Errorf("could not parse GCP IGM self-link: %w", err)
+		return nil, fmt.Errorf("could not parse GCP IGM ID: %w", err)
 	}
 
 	// Validate configuration before creating any clients
@@ -108,7 +114,7 @@ func NewGCPController(ctx context.Context, cfg *RuntimeConfig) (ControllerInterf
 		Project:     parsedIGM.Project,
 		Location:    parsedIGM.Location,
 		IGMName:     parsedIGM.Name,
-		IGMSelfLink: cfg.GCPIGMSelfLink,
+		IGMID: cfg.GCPIGMID,
 		IsRegional:  parsedIGM.IsRegional,
 		MinSize:     cfg.AutoscalingMinSize,
 		MaxSize:     cfg.AutoscalingMaxSize,
@@ -173,37 +179,66 @@ func NewGCPController(ctx context.Context, cfg *RuntimeConfig) (ControllerInterf
 }
 
 // DescribeInstances returns the details of the given instances from GCP Compute Engine.
+//
+// Instances are grouped by zone and fetched with a single ListInstances call per zone
+// using a name-prefix filter, rather than individual GetInstance calls per VM.
 func (c *GCPController) DescribeInstances(ctx context.Context, instanceIDs []string) (instances []Instance, err error) {
 	ctx, span := c.Tracer.Start(ctx, "gcp.igm.describeInstances")
 	defer span.End()
 
-	for _, instanceID := range instanceIDs {
-		// Parse the instance URL to get project, zone, and name
-		instanceInfo, err := parseGCPInstanceURL(instanceID)
+	if len(instanceIDs) == 0 {
+		return nil, nil
+	}
+
+	// Parse all instance URLs and group by zone.
+	byZone := make(map[string][]instanceRef)
+	for _, id := range instanceIDs {
+		parsed, err := parseGCPInstanceURL(id)
 		if err != nil {
-			return nil, fmt.Errorf("could not parse instance ID %s: %w", instanceID, err)
+			return nil, fmt.Errorf("could not parse instance ID %s: %w", id, err)
 		}
+		byZone[parsed.Zone] = append(byZone[parsed.Zone], instanceRef{parsed: parsed, fullID: id})
+	}
 
-		instance, err := c.Instances.GetInstance(ctx, instanceInfo.Project, instanceInfo.Zone, instanceInfo.Name)
+	// Fetch instance details with one ListInstances call per zone.
+	for zone, refs := range byZone {
+		baseName := deriveGCPInstanceBaseName(refs[0].parsed.Name)
+		filter := fmt.Sprintf(`name eq "%s-.*"`, baseName)
+
+		listed, err := c.Instances.ListInstances(ctx, refs[0].parsed.Project, zone, filter)
 		if err != nil {
-			return nil, fmt.Errorf("could not describe instance %s: %w", instanceID, err)
+			return nil, fmt.Errorf("could not list instances in zone %s: %w", zone, err)
 		}
 
-		if instance.CreationTimestamp == nil {
-			return nil, fmt.Errorf("could not find creation time for instance %s", instanceID)
+		// Index listed instances by name for O(1) lookup.
+		byName := make(map[string]*computepb.Instance, len(listed))
+		for _, inst := range listed {
+			if inst.Name != nil {
+				byName[*inst.Name] = inst
+			}
 		}
 
-		// Parse the creation timestamp
-		// GCP returns RFC3339 format: 2021-01-01T00:00:00.000-07:00
-		creationTime, err := time.Parse(time.RFC3339, *instance.CreationTimestamp)
-		if err != nil {
-			return nil, fmt.Errorf("could not parse creation timestamp for instance %s: %w", instanceID, err)
-		}
+		for _, ref := range refs {
+			inst, ok := byName[ref.parsed.Name]
+			if !ok {
+				return nil, fmt.Errorf("could not describe instance %s: not found in list results", ref.fullID)
+			}
 
-		instances = append(instances, Instance{
-			ID:         instanceID,
-			LaunchTime: creationTime,
-		})
+			if inst.CreationTimestamp == nil {
+				return nil, fmt.Errorf("could not find creation time for instance %s", ref.fullID)
+			}
+
+			// GCP returns RFC3339 format: 2021-01-01T00:00:00.000-07:00
+			creationTime, err := time.Parse(time.RFC3339, *inst.CreationTimestamp)
+			if err != nil {
+				return nil, fmt.Errorf("could not parse creation timestamp for instance %s: %w", ref.fullID, err)
+			}
+
+			instances = append(instances, Instance{
+				ID:         ref.fullID,
+				LaunchTime: creationTime,
+			})
+		}
 	}
 
 	return instances, nil
@@ -233,7 +268,7 @@ func (c *GCPController) GetAutoscalingGroup(ctx context.Context) (out *AutoScali
 	}
 
 	out = &AutoScalingGroup{
-		Name:            c.IGMSelfLink,
+		Name:            c.IGMID,
 		MinSize:         int(c.MinSize),
 		MaxSize:         int(c.MaxSize),
 		DesiredCapacity: -1,
@@ -308,9 +343,9 @@ func (c *GCPController) ScaleUpASG(ctx context.Context, desiredCapacity int) (er
 }
 
 // InstanceIdentity extracts the group ID and instance ID from worker metadata using GCP-specific keys.
-// GCP workers use "gcp_igm_self_link" for the IGM self-link and "gcp_instance_self_link" for the instance self-link.
+// GCP workers use "gcp_igm_id" for the IGM resource ID and "gcp_instance_self_link" for the instance self-link.
 func (c *GCPController) InstanceIdentity(worker *Worker) (GroupID, InstanceID, error) {
-	groupID, groupErr := worker.MetadataValue("gcp_igm_self_link")
+	groupID, groupErr := worker.MetadataValue("gcp_igm_id")
 	instanceID, instanceErr := worker.MetadataValue("gcp_instance_self_link")
 	return GroupID(groupID), InstanceID(instanceID), errors.Join(groupErr, instanceErr)
 }
@@ -329,13 +364,26 @@ func (c *GCPController) Close() error {
 
 // gcpInstancesClient methods
 
-func (c *gcpInstancesClient) GetInstance(ctx context.Context, project, zone, instanceName string) (*computepb.Instance, error) {
-	req := &computepb.GetInstanceRequest{
-		Project:  project,
-		Zone:     zone,
-		Instance: instanceName,
+func (c *gcpInstancesClient) ListInstances(ctx context.Context, project, zone, filter string) ([]*computepb.Instance, error) {
+	req := &computepb.ListInstancesRequest{
+		Project: project,
+		Zone:    zone,
+		Filter:  &filter,
 	}
-	return c.client.Get(ctx, req)
+
+	var instances []*computepb.Instance
+	it := c.client.List(ctx, req)
+	for {
+		instance, err := it.Next()
+		if err == iterator.Done {
+			break
+		}
+		if err != nil {
+			return nil, err
+		}
+		instances = append(instances, instance)
+	}
+	return instances, nil
 }
 
 // Close releases the underlying client resources.
@@ -490,20 +538,20 @@ func (c *gcpRegionalComputeClient) Close() error {
 
 // --- Helpers (in order of first reference) ---
 
-// parseGCPIGMSelfLink parses a GCP Instance Group Manager self-link.
+// parseGCPIGMID parses a GCP Instance Group Manager ID.
 // Uses a single regex pattern to handle both zonal and regional formats:
 //   - Zonal: projects/{project}/zones/{zone}/instanceGroupManagers/{name}
 //   - Regional: projects/{project}/regions/{region}/instanceGroupManagers/{name}
-func parseGCPIGMSelfLink(selfLink string) (*igmID, error) {
-	if selfLink == "" {
-		return nil, errors.New("IGM self-link cannot be empty")
+func parseGCPIGMID(id string) (*igmID, error) {
+	if id == "" {
+		return nil, errors.New("IGM ID cannot be empty")
 	}
 
-	matches := gcpIGMSelfLinkRegex.FindStringSubmatch(selfLink)
+	matches := gcpIGMIDRegex.FindStringSubmatch(id)
 	if matches == nil {
-		return nil, fmt.Errorf("invalid IGM self-link format: %q does not match expected pattern "+
+		return nil, fmt.Errorf("invalid IGM ID format: %q does not match expected pattern "+
 			"projects/{project}/zones/{zone}/instanceGroupManagers/{name} or "+
-			"projects/{project}/regions/{region}/instanceGroupManagers/{name}", selfLink)
+			"projects/{project}/regions/{region}/instanceGroupManagers/{name}", id)
 	}
 
 	return &igmID{
@@ -546,6 +594,15 @@ func stripGCPInstanceURLPrefix(instanceURL string) string {
 		}
 	}
 	return instanceURL
+}
+
+// deriveGCPInstanceBaseName extracts the base instance name from a GCP managed instance name.
+// IGM instances are named "{baseInstanceName}-{suffix}", so this strips the last "-{suffix}" segment.
+func deriveGCPInstanceBaseName(instanceName string) string {
+	if i := strings.LastIndex(instanceName, "-"); i >= 0 {
+		return instanceName[:i]
+	}
+	return instanceName
 }
 
 // mapGCPCurrentActionToLifecycleState maps GCP ManagedInstance CurrentAction values to the

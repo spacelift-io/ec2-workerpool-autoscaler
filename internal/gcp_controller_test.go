@@ -23,7 +23,7 @@ const (
 	gcpZone         = "us-central1-a"
 	gcpRegion       = "us-central1"
 	gcpIGMName      = "my-mig"
-	gcpIGMSelfLink  = "projects/my-project/zones/us-central1-a/instanceGroupManagers/my-mig"
+	gcpIGMID  = "projects/my-project/zones/us-central1-a/instanceGroupManagers/my-mig"
 )
 
 // Helper function to create a pointer to a value
@@ -63,7 +63,7 @@ func setupGCPController(t *testing.T, isRegional bool) (*internal.GCPController,
 		Project:    gcpProject,
 		Location:   location,
 		IGMName:    gcpIGMName,
-		IGMSelfLink: gcpIGMSelfLink,
+		IGMID: gcpIGMID,
 		IsRegional: isRegional,
 		MinSize:    0,
 		MaxSize:    10,
@@ -85,14 +85,14 @@ func TestGCPDescribeInstances_APICallFails_ReturnsError(t *testing.T) {
 
 	sut, _, mockInstances, _ := setupGCPZonalController(t)
 
-	mockInstances.On("GetInstance", mock.Anything, gcpProject, gcpZone, "instance-1").
+	mockInstances.On("ListInstances", mock.Anything, gcpProject, gcpZone, mock.Anything).
 		Return(nil, errors.New("API error"))
 
 	instances, err := sut.DescribeInstances(t.Context(), instanceIDs)
 
 	require.Empty(t, instances)
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "could not describe instance")
+	require.Contains(t, err.Error(), "could not list instances in zone")
 }
 
 func TestGCPDescribeInstances_MissingCreationTimestamp_ReturnsError(t *testing.T) {
@@ -101,13 +101,10 @@ func TestGCPDescribeInstances_MissingCreationTimestamp_ReturnsError(t *testing.T
 
 	sut, _, mockInstances, _ := setupGCPZonalController(t)
 
-	instance := &computepb.Instance{
-		Name:              ptr("instance-1"),
-		CreationTimestamp: nil,
-	}
-
-	mockInstances.On("GetInstance", mock.Anything, gcpProject, gcpZone, "instance-1").
-		Return(instance, nil)
+	mockInstances.On("ListInstances", mock.Anything, gcpProject, gcpZone, mock.Anything).
+		Return([]*computepb.Instance{
+			{Name: ptr("instance-1"), CreationTimestamp: nil},
+		}, nil)
 
 	instances, err := sut.DescribeInstances(t.Context(), instanceIDs)
 
@@ -123,13 +120,11 @@ func TestGCPDescribeInstances_ValidInstance_ReturnsInstance(t *testing.T) {
 	sut, _, mockInstances, _ := setupGCPZonalController(t)
 
 	timestamp := time.Now().Format(time.RFC3339)
-	instance := &computepb.Instance{
-		Name:              ptr("instance-1"),
-		CreationTimestamp: ptr(timestamp),
-	}
 
-	mockInstances.On("GetInstance", mock.Anything, gcpProject, gcpZone, "instance-1").
-		Return(instance, nil)
+	mockInstances.On("ListInstances", mock.Anything, gcpProject, gcpZone, mock.Anything).
+		Return([]*computepb.Instance{
+			{Name: ptr("instance-1"), CreationTimestamp: ptr(timestamp)},
+		}, nil)
 
 	instances, err := sut.DescribeInstances(t.Context(), instanceIDs)
 
@@ -147,16 +142,11 @@ func TestGCPDescribeInstances_MultipleInstances_ReturnsAllInstances(t *testing.T
 
 	timestamp := time.Now().Format(time.RFC3339)
 
-	mockInstances.On("GetInstance", mock.Anything, gcpProject, gcpZone, "instance-1").
-		Return(&computepb.Instance{
-			Name:              ptr("instance-1"),
-			CreationTimestamp: ptr(timestamp),
-		}, nil)
-
-	mockInstances.On("GetInstance", mock.Anything, gcpProject, gcpZone, "instance-2").
-		Return(&computepb.Instance{
-			Name:              ptr("instance-2"),
-			CreationTimestamp: ptr(timestamp),
+	// Single ListInstances call returns both instances
+	mockInstances.On("ListInstances", mock.Anything, gcpProject, gcpZone, mock.Anything).
+		Return([]*computepb.Instance{
+			{Name: ptr("instance-1"), CreationTimestamp: ptr(timestamp)},
+			{Name: ptr("instance-2"), CreationTimestamp: ptr(timestamp)},
 		}, nil)
 
 	instances, err := sut.DescribeInstances(t.Context(), instanceIDs)
@@ -184,13 +174,10 @@ func TestGCPDescribeInstances_InvalidTimestamp_ReturnsError(t *testing.T) {
 
 	sut, _, mockInstances, _ := setupGCPZonalController(t)
 
-	instance := &computepb.Instance{
-		Name:              ptr("instance-1"),
-		CreationTimestamp: ptr("not-a-valid-timestamp"),
-	}
-
-	mockInstances.On("GetInstance", mock.Anything, gcpProject, gcpZone, "instance-1").
-		Return(instance, nil)
+	mockInstances.On("ListInstances", mock.Anything, gcpProject, gcpZone, mock.Anything).
+		Return([]*computepb.Instance{
+			{Name: ptr("instance-1"), CreationTimestamp: ptr("not-a-valid-timestamp")},
+		}, nil)
 
 	instances, err := sut.DescribeInstances(t.Context(), instanceIDs)
 
@@ -208,6 +195,26 @@ func TestGCPDescribeInstances_EmptyList_ReturnsEmptySlice(t *testing.T) {
 
 	require.NoError(t, err)
 	require.Empty(t, instances)
+}
+
+func TestGCPDescribeInstances_InstanceNotInListResults_ReturnsError(t *testing.T) {
+	instanceID := makeGCPInstanceURL(gcpProject, gcpZone, "instance-1")
+	instanceIDs := []string{instanceID}
+
+	sut, _, mockInstances, _ := setupGCPZonalController(t)
+
+	// ListInstances returns results but not the instance we're looking for
+	mockInstances.On("ListInstances", mock.Anything, gcpProject, gcpZone, mock.Anything).
+		Return([]*computepb.Instance{
+			{Name: ptr("instance-99"), CreationTimestamp: ptr(time.Now().Format(time.RFC3339))},
+		}, nil)
+
+	instances, err := sut.DescribeInstances(t.Context(), instanceIDs)
+
+	require.Nil(t, instances)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "could not describe instance")
+	require.Contains(t, err.Error(), "not found in list results")
 }
 
 // GetAutoscalingGroup tests
@@ -293,7 +300,7 @@ func TestGCPGetAutoscalingGroup_Success_ReturnsGroup(t *testing.T) {
 
 	require.NoError(t, err)
 	require.NotNil(t, group)
-	require.Equal(t, gcpIGMSelfLink, group.Name)
+	require.Equal(t, gcpIGMID, group.Name)
 	require.Equal(t, 3, group.DesiredCapacity)
 	require.Equal(t, 0, group.MinSize)
 	require.Equal(t, 10, group.MaxSize)

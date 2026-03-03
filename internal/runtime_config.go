@@ -38,7 +38,7 @@ type RuntimeConfig struct {
 	AzureKeyVaultName   string `azEnv:"AZURE_KEY_VAULT_NAME,notEmpty"`
 
 	// GCP-specific fields - use gcpEnv tag
-	GCPIGMSelfLink string `gcpEnv:"GCP_IGM_SELF_LINK,notEmpty"`
+	GCPIGMID string `gcpEnv:"GCP_IGM_ID,notEmpty"`
 }
 
 // Parse parses environment variables into the config for the specified platform.
@@ -79,8 +79,8 @@ func (r *RuntimeConfig) Parse(platform Platform) error {
 
 // GroupKeyAndID returns the platform-appropriate log key and resource ID.
 func (r RuntimeConfig) GroupKeyAndID() (string, string) {
-	if r.GCPIGMSelfLink != "" {
-		return "igm_self_link", r.GCPIGMSelfLink
+	if r.GCPIGMID != "" {
+		return "igm_id", r.GCPIGMID
 	}
 	if r.AzureVMSSResourceID != "" {
 		return "vmss_resource_id", r.AzureVMSSResourceID
