@@ -343,10 +343,10 @@ func (c *GCPController) ScaleUpASG(ctx context.Context, desiredCapacity int) (er
 }
 
 // InstanceIdentity extracts the group ID and instance ID from worker metadata using GCP-specific keys.
-// GCP workers use "gcp_igm_id" for the IGM resource ID and "gcp_instance_self_link" for the instance self-link.
+// GCP workers use "gcp_igm_id" for the IGM ID and "gcp_instance_id" for the instance ID.
 func (c *GCPController) InstanceIdentity(worker *Worker) (GroupID, InstanceID, error) {
 	groupID, groupErr := worker.MetadataValue("gcp_igm_id")
-	instanceID, instanceErr := worker.MetadataValue("gcp_instance_self_link")
+	instanceID, instanceErr := worker.MetadataValue("gcp_instance_id")
 	return GroupID(groupID), InstanceID(instanceID), errors.Join(groupErr, instanceErr)
 }
 
