@@ -14,6 +14,24 @@ type MockController struct {
 	mock.Mock
 }
 
+// Close provides a mock function with no fields
+func (_m *MockController) Close() error {
+	ret := _m.Called()
+
+	if len(ret) == 0 {
+		panic("no return value specified for Close")
+	}
+
+	var r0 error
+	if rf, ok := ret.Get(0).(func() error); ok {
+		r0 = rf()
+	} else {
+		r0 = ret.Error(0)
+	}
+
+	return r0
+}
+
 // DescribeInstances provides a mock function with given fields: ctx, instanceIDs
 func (_m *MockController) DescribeInstances(ctx context.Context, instanceIDs []string) ([]internal.Instance, error) {
 	ret := _m.Called(ctx, instanceIDs)
@@ -130,6 +148,41 @@ func (_m *MockController) GetWorkerPool(ctx context.Context) (*internal.WorkerPo
 	}
 
 	return r0, r1
+}
+
+// InstanceIdentity provides a mock function with given fields: worker
+func (_m *MockController) InstanceIdentity(worker *internal.Worker) (internal.GroupID, internal.InstanceID, error) {
+	ret := _m.Called(worker)
+
+	if len(ret) == 0 {
+		panic("no return value specified for InstanceIdentity")
+	}
+
+	var r0 internal.GroupID
+	var r1 internal.InstanceID
+	var r2 error
+	if rf, ok := ret.Get(0).(func(*internal.Worker) (internal.GroupID, internal.InstanceID, error)); ok {
+		return rf(worker)
+	}
+	if rf, ok := ret.Get(0).(func(*internal.Worker) internal.GroupID); ok {
+		r0 = rf(worker)
+	} else {
+		r0 = ret.Get(0).(internal.GroupID)
+	}
+
+	if rf, ok := ret.Get(1).(func(*internal.Worker) internal.InstanceID); ok {
+		r1 = rf(worker)
+	} else {
+		r1 = ret.Get(1).(internal.InstanceID)
+	}
+
+	if rf, ok := ret.Get(2).(func(*internal.Worker) error); ok {
+		r2 = rf(worker)
+	} else {
+		r2 = ret.Error(2)
+	}
+
+	return r0, r1, r2
 }
 
 // KillInstance provides a mock function with given fields: ctx, instanceID

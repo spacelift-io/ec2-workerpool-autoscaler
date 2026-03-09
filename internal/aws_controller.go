@@ -220,3 +220,19 @@ func (c *AWSController) ScaleUpASG(ctx context.Context, desiredCapacity int) (er
 
 	return nil
 }
+
+// InstanceIdentity extracts the group ID and instance ID from worker metadata using AWS-specific keys.
+// AWS workers use "asg_id" for the autoscaling group name and "instance_id" for the EC2 instance ID.
+func (c *AWSController) InstanceIdentity(worker *Worker) (GroupID, InstanceID, error) {
+	groupID, groupErr := worker.MetadataValue("asg_id")
+	instanceID, instanceErr := worker.MetadataValue("instance_id")
+	return GroupID(groupID), InstanceID(instanceID), errors.Join(groupErr, instanceErr)
+}
+
+// Close releases resources held by the AWSController.
+// For AWS, the SDK clients don't require explicit cleanup, so this is a no-op.
+// Implemented to satisfy the ControllerInterface.
+func (c *AWSController) Close() error {
+	// AWS SDK v2 clients don't require explicit cleanup
+	return nil
+}

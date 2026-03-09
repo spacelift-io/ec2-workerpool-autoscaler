@@ -21,6 +21,16 @@ builds:
     goos: [linux]
     goarch: [amd64, arm64]
     binary: bootstrap
+  - main: ./cmd/cloudrun
+    id: cloudrun
+    env:
+      - CGO_ENABLED=0
+      - GOPRIVATE="github.com/spacelift-io"
+    mod_timestamp: '{{ .CommitTimestamp }}'
+    flags: [-trimpath, -v]
+    goos: [linux]
+    goarch: [amd64, arm64]
+    binary: autoscaler
 
 archives:
   - id: lambda
@@ -31,6 +41,10 @@ archives:
     ids: [azurefunc]
     formats: [zip]
     name_template: '{{ .ProjectName }}_azurefunc_{{ .Os }}_{{ .Arch }}'
+  - id: cloudrun
+    ids: [cloudrun]
+    formats: [tar.gz]
+    name_template: '{{ .ProjectName }}_cloudrun_{{ .Os }}_{{ .Arch }}'
 
 changelog:
   use: github-native

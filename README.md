@@ -4,10 +4,11 @@ This utility is designed to be executed periodically for a single combination of
 
 ## Supported Cloud Providers
 
-This autoscaler supports both AWS EC2 Auto Scaling Groups and Azure Virtual Machine Scale Sets (VMSS). Choose the section below that matches your infrastructure:
+This autoscaler supports multiple cloud providers. Choose the section below that matches your infrastructure:
 
 - [AWS EC2 Auto Scaling Groups](#aws-setup)
 - [Azure Virtual Machine Scale Sets](#azure-setup)
+- [GCP Managed Instance Groups](#gcp-setup)
 
 ## Important note on concurrency
 
@@ -216,3 +217,74 @@ The autoscaler also supports OpenTelemetry tracing, which can be configured to s
 - **No Native Autoscaling**: The autoscaler will check for and prevent conflicts with Azure's native autoscaling. If Azure autoscaling is enabled on the VMSS, the utility will exit with an error. You must disable Azure autoscaling to use this utility.
 - **Capacity Management**: Unlike AWS ASG which has built-in min/max/desired capacity, Azure VMSS uses SKU capacity. The autoscaler treats the current SKU capacity as the desired capacity and uses `AUTOSCALING_MIN_SIZE` and `AUTOSCALING_MAX_SIZE` environment variables to control scaling bounds.
 - **Instance Deletion**: When scaling down, Azure automatically adjusts the VMSS capacity when an instance is deleted, so there's no separate "detach" operation like in AWS.
+
+## GCP Setup
+
+The GCP autoscaler works with [Managed Instance Groups](https://cloud.google.com/compute/docs/instance-groups) (MIGs, also called IGMs). Both zonal and regional MIGs are supported.
+
+### Execution Mode
+
+- **Cloud Run** (the `cmd/cloudrun` binary) - designed to be executed as a Cloud Run job with a Cloud Scheduler trigger;
+
+### GCP Environment Variables
+
+The utility requires the following environment variables to be set:
+
+- `GCP_IGM_ID` - the IGM resource ID (format: `projects/{project}/zones/{zone}/instanceGroupManagers/{name}` or `projects/{project}/regions/{region}/instanceGroupManagers/{name}`);
+- `AUTOSCALING_MAX_SIZE` (required) - the maximum number of instances the autoscaler can scale up to;
+- `SPACELIFT_API_KEY_ID` - the ID of the Spacelift [API key](https://docs.spacelift.io/integrations/api#spacelift-api-key-token) to use for authentication;
+- `SPACELIFT_API_KEY_SECRET_NAME` - the full resource name of the GCP Secret Manager secret version containing the Spacelift API key secret (format: `projects/{project}/secrets/{secret}/versions/{version}`);
+- `SPACELIFT_API_KEY_ENDPOINT` - the URL of the Spacelift API endpoint to use (eg. `https://demo.app.spacelift.io`);
+- `SPACELIFT_WORKER_POOL_ID` - the ID of the Spacelift worker pool to scale;
+
+Additional optional environment variables:
+
+- `AUTOSCALING_MAX_KILL` (defaults to 1) - the maximum number of instances the utility is allowed to terminate in a single run;
+- `AUTOSCALING_MAX_CREATE` (defaults to 1) - the maximum number of instances the utility is allowed to create in a single run;
+- `AUTOSCALING_SCALE_DOWN_DELAY` (defaults to 0) - the number of minutes a worker must be registered to Spacelift before its eligible to be scaled in;
+- `AUTOSCALING_MIN_SIZE` (optional, defaults to 0) - the minimum number of instances the autoscaler should maintain;
+
+### GCP Authentication
+
+The autoscaler uses [Application Default Credentials](https://cloud.google.com/docs/authentication/application-default-credentials), which supports multiple authentication methods:
+
+1. **Service account** (recommended for Cloud Run) - automatically available via the Cloud Run service account
+2. **gcloud CLI** - uses credentials from `gcloud auth application-default login` (useful for local development)
+
+### GCP IAM Permissions
+
+The service account running the autoscaler needs a minimal set of permissions. We recommend creating a [custom IAM role](https://cloud.google.com/iam/docs/creating-custom-roles) with only these permissions:
+
+**Compute (scope to the project or IGM):**
+
+- `compute.instanceGroupManagers.get` - retrieve IGM details and target size
+- `compute.instanceGroupManagers.list` - list managed instances in the IGM
+- `compute.instanceGroupManagers.update` - resize the IGM
+- `compute.instanceGroupManagers.deleteInstances` - remove instances when scaling down
+- `compute.instances.list` - retrieve instance details for stray detection
+
+**Secret Manager (scope to the secret):**
+
+- `secretmanager.versions.access` - read the Spacelift API key secret
+
+### Worker Metadata Requirements
+
+For the autoscaler to match MIG instances to Spacelift workers, each worker must include the following keys in its Spacelift metadata:
+
+- `gcp_igm_id` - the IGM resource ID (must match the `GCP_IGM_ID` environment variable)
+- `gcp_instance_id` - the instance ID (resource path, e.g. `projects/{project}/zones/{zone}/instances/{name}`)
+
+This metadata is typically set by the worker startup script using values from the instance's [metadata server](https://cloud.google.com/compute/docs/metadata/overview). Workers missing these metadata keys will be reported as `worker has invalid metadata` in the autoscaler logs.
+
+### Spacelift API Key Permissions
+
+The Spacelift API key needs to have:
+
+- `Space:Read` for the Space the worker exists in
+- `Worker Pool:Drain Worker`
+
+### GCP-Specific Notes
+
+- **Capacity Management**: GCP MIGs use `targetSize` for desired capacity. The autoscaler uses `AUTOSCALING_MIN_SIZE` and `AUTOSCALING_MAX_SIZE` environment variables to control scaling bounds, since MIGs don't have built-in min/max like AWS ASGs.
+- **Instance Deletion**: When scaling down, deleting an instance from the MIG automatically adjusts the target size, so there's no separate "detach" operation like in AWS.
+- **Regional MIGs**: Regional MIGs distribute instances across zones automatically. The autoscaler handles both zonal and regional MIGs transparently.

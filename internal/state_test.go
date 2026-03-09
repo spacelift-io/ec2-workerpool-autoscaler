@@ -2,6 +2,7 @@ package internal_test
 
 import (
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"testing"
 	"time"
@@ -14,6 +15,18 @@ import (
 func testLogger() *slog.Logger {
 	return slog.Default()
 }
+
+// awsInstanceIdentifier implements InstanceIdentifier using AWS-style metadata keys.
+// Used for testing NewState with AWS-style worker metadata.
+type awsInstanceIdentifier struct{}
+
+func (awsInstanceIdentifier) InstanceIdentity(worker *internal.Worker) (internal.GroupID, internal.InstanceID, error) {
+	groupID, groupErr := worker.MetadataValue("asg_id")
+	instanceID, instanceErr := worker.MetadataValue("instance_id")
+	return internal.GroupID(groupID), internal.InstanceID(instanceID), errors.Join(groupErr, instanceErr)
+}
+
+var testIdentifier = awsInstanceIdentifier{}
 
 func TestState_StrayInstances(t *testing.T) {
 	const asgName = "asg-name"
@@ -49,7 +62,7 @@ func TestState_StrayInstances(t *testing.T) {
 		},
 	}
 
-	state, err := internal.NewState(workerPool, asg, cfg, testLogger())
+	state, err := internal.NewState(workerPool, asg, cfg, testLogger(), testIdentifier)
 	require.NoError(t, err)
 
 	strayInstances := state.StrayInstances()
@@ -66,7 +79,7 @@ func TestNewState_ASGNameNotSet_ReturnsError(t *testing.T) {
 	workerPool := &internal.WorkerPool{}
 	cfg := internal.RuntimeConfig{}
 
-	_, err := internal.NewState(workerPool, asg, cfg, testLogger())
+	_, err := internal.NewState(workerPool, asg, cfg, testLogger(), testIdentifier)
 
 	require.EqualError(t, err, "ASG name is not set")
 }
@@ -81,7 +94,7 @@ func TestNewState_ASGMinSizeNotSet_ReturnsError(t *testing.T) {
 	workerPool := &internal.WorkerPool{}
 	cfg := internal.RuntimeConfig{}
 
-	_, err := internal.NewState(workerPool, asg, cfg, testLogger())
+	_, err := internal.NewState(workerPool, asg, cfg, testLogger(), testIdentifier)
 
 	require.EqualError(t, err, "ASG minimum size is not set")
 }
@@ -96,7 +109,7 @@ func TestNewState_ASGMaxSizeNotSet_ReturnsError(t *testing.T) {
 	workerPool := &internal.WorkerPool{}
 	cfg := internal.RuntimeConfig{}
 
-	_, err := internal.NewState(workerPool, asg, cfg, testLogger())
+	_, err := internal.NewState(workerPool, asg, cfg, testLogger(), testIdentifier)
 
 	require.EqualError(t, err, "ASG maximum size is not set")
 }
@@ -111,7 +124,7 @@ func TestNewState_ASGDesiredCapacityNotSet_ReturnsError(t *testing.T) {
 	workerPool := &internal.WorkerPool{}
 	cfg := internal.RuntimeConfig{}
 
-	_, err := internal.NewState(workerPool, asg, cfg, testLogger())
+	_, err := internal.NewState(workerPool, asg, cfg, testLogger(), testIdentifier)
 
 	require.EqualError(t, err, "ASG desired capacity is not set")
 }
@@ -131,7 +144,7 @@ func TestNewState_WorkerMissingMetadata_SkipsWorker(t *testing.T) {
 	}
 	cfg := internal.RuntimeConfig{}
 
-	state, err := internal.NewState(workerPool, asg, cfg, testLogger())
+	state, err := internal.NewState(workerPool, asg, cfg, testLogger(), testIdentifier)
 
 	require.NoError(t, err)
 	require.NotNil(t, state)
@@ -156,7 +169,7 @@ func TestNewState_WorkerEmptyASGID_SkipsWorker(t *testing.T) {
 	}
 	cfg := internal.RuntimeConfig{}
 
-	state, err := internal.NewState(workerPool, asg, cfg, testLogger())
+	state, err := internal.NewState(workerPool, asg, cfg, testLogger(), testIdentifier)
 
 	require.NoError(t, err)
 	require.NotNil(t, state)
@@ -181,7 +194,7 @@ func TestNewState_WorkerIncorrectASG_ReturnsError(t *testing.T) {
 	}
 	cfg := internal.RuntimeConfig{}
 
-	_, err := internal.NewState(workerPool, asg, cfg, testLogger())
+	_, err := internal.NewState(workerPool, asg, cfg, testLogger(), testIdentifier)
 
 	require.EqualError(t, err, "worker worker-456 has incorrect ASG: other-asg (expected: asg-name)")
 }
@@ -203,7 +216,7 @@ func TestStrayInstances_NoWorkers_InstanceInService_ReturnsStrayInstance(t *test
 	workerPool := &internal.WorkerPool{}
 	cfg := internal.RuntimeConfig{}
 
-	state, err := internal.NewState(workerPool, asg, cfg, testLogger())
+	state, err := internal.NewState(workerPool, asg, cfg, testLogger(), testIdentifier)
 	require.NoError(t, err)
 
 	instanceIDs := state.StrayInstances()
@@ -228,7 +241,7 @@ func TestStrayInstances_NoWorkers_InstanceNotInService_ReturnsEmpty(t *testing.T
 	workerPool := &internal.WorkerPool{}
 	cfg := internal.RuntimeConfig{}
 
-	state, err := internal.NewState(workerPool, asg, cfg, testLogger())
+	state, err := internal.NewState(workerPool, asg, cfg, testLogger(), testIdentifier)
 	require.NoError(t, err)
 
 	instanceIDs := state.StrayInstances()
@@ -260,7 +273,7 @@ func TestStrayInstances_WorkerMatchesInstance_ReturnsEmpty(t *testing.T) {
 	}
 	cfg := internal.RuntimeConfig{}
 
-	state, err := internal.NewState(workerPool, asg, cfg, testLogger())
+	state, err := internal.NewState(workerPool, asg, cfg, testLogger(), testIdentifier)
 	require.NoError(t, err)
 
 	instanceIDs := state.StrayInstances()
@@ -292,7 +305,7 @@ func TestStrayInstances_WorkerDoesNotMatchInstance_ReturnsStrayInstance(t *testi
 	}
 	cfg := internal.RuntimeConfig{}
 
-	state, err := internal.NewState(workerPool, asg, cfg, testLogger())
+	state, err := internal.NewState(workerPool, asg, cfg, testLogger(), testIdentifier)
 	require.NoError(t, err)
 
 	instanceIDs := state.StrayInstances()
@@ -329,7 +342,7 @@ func TestScalableWorkers_ReturnsIdleWorkers(t *testing.T) {
 	}
 	cfg := internal.RuntimeConfig{}
 
-	state, err := internal.NewState(workerPool, asg, cfg, testLogger())
+	state, err := internal.NewState(workerPool, asg, cfg, testLogger(), testIdentifier)
 	require.NoError(t, err)
 
 	scalableWorkers := state.ScalableWorkers()
@@ -350,7 +363,7 @@ func TestDecide_NoWorkersNoPendingRunsNoInstances_NoScaling(t *testing.T) {
 		AutoscalingScaleDownDelay: 50,
 	}
 
-	state, err := internal.NewState(workerPool, asg, cfg, testLogger())
+	state, err := internal.NewState(workerPool, asg, cfg, testLogger(), testIdentifier)
 	require.NoError(t, err)
 
 	decision := state.Decide(2, 2)
@@ -373,7 +386,7 @@ func TestDecide_NoWorkersNoPendingRunsWithInstances_NoScalingNotInBalance(t *tes
 		AutoscalingScaleDownDelay: 50,
 	}
 
-	state, err := internal.NewState(workerPool, asg, cfg, testLogger())
+	state, err := internal.NewState(workerPool, asg, cfg, testLogger(), testIdentifier)
 	require.NoError(t, err)
 
 	decision := state.Decide(2, 2)
@@ -402,7 +415,7 @@ func TestDecide_NoWorkersPendingRunsAtMaxSize_NoScaling(t *testing.T) {
 		AutoscalingScaleDownDelay: 50,
 	}
 
-	state, err := internal.NewState(workerPool, asg, cfg, testLogger())
+	state, err := internal.NewState(workerPool, asg, cfg, testLogger(), testIdentifier)
 	require.NoError(t, err)
 
 	decision := state.Decide(2, 2)
@@ -426,7 +439,7 @@ func TestDecide_PendingRunsConstrainedByMaxCreate_ScalesUpBy1(t *testing.T) {
 		AutoscalingScaleDownDelay: 50,
 	}
 
-	state, err := internal.NewState(workerPool, asg, cfg, testLogger())
+	state, err := internal.NewState(workerPool, asg, cfg, testLogger(), testIdentifier)
 	require.NoError(t, err)
 
 	decision := state.Decide(1, 2)
@@ -453,7 +466,7 @@ func TestDecide_PendingRunsNotConstrainedByMaxCreateOrASGSize_ScalesUpBy5(t *tes
 		AutoscalingScaleDownDelay: 50,
 	}
 
-	state, err := internal.NewState(workerPool, asg, cfg, testLogger())
+	state, err := internal.NewState(workerPool, asg, cfg, testLogger(), testIdentifier)
 	require.NoError(t, err)
 
 	decision := state.Decide(10, 2)
@@ -477,7 +490,7 @@ func TestDecide_PendingRunsConstrainedByMaxASGSize_ScalesUpBy2(t *testing.T) {
 		AutoscalingScaleDownDelay: 50,
 	}
 
-	state, err := internal.NewState(workerPool, asg, cfg, testLogger())
+	state, err := internal.NewState(workerPool, asg, cfg, testLogger(), testIdentifier)
 	require.NoError(t, err)
 
 	decision := state.Decide(10, 2)
@@ -505,14 +518,14 @@ func TestDecide_NoPendingRunsAtMinSize_NoScaling(t *testing.T) {
 		AutoscalingScaleDownDelay: 50,
 	}
 
-	state, err := internal.NewState(workerPool, asg, cfg, testLogger())
+	state, err := internal.NewState(workerPool, asg, cfg, testLogger(), testIdentifier)
 	require.NoError(t, err)
 
 	decision := state.Decide(2, 2)
 
 	require.Equal(t, internal.ScalingDirectionNone, decision.ScalingDirection)
 	require.Zero(t, decision.ScalingSize)
-	require.ElementsMatch(t, []string{"autoscaling group is already at minimum size"}, decision.Comments)
+	require.ElementsMatch(t, []string{"autoscaling group exactly at the right size"}, decision.Comments)
 }
 
 func TestDecide_NoPendingRunsConstrainedByMaxKill_ScalesDownBy1(t *testing.T) {
@@ -533,7 +546,7 @@ func TestDecide_NoPendingRunsConstrainedByMaxKill_ScalesDownBy1(t *testing.T) {
 		AutoscalingScaleDownDelay: 50,
 	}
 
-	state, err := internal.NewState(workerPool, asg, cfg, testLogger())
+	state, err := internal.NewState(workerPool, asg, cfg, testLogger(), testIdentifier)
 	require.NoError(t, err)
 
 	decision := state.Decide(2, 1)
@@ -564,7 +577,7 @@ func TestDecide_NoPendingRunsConstrainedByMinASGSize_ScalesDownBy1(t *testing.T)
 		AutoscalingScaleDownDelay: 50,
 	}
 
-	state, err := internal.NewState(workerPool, asg, cfg, testLogger())
+	state, err := internal.NewState(workerPool, asg, cfg, testLogger(), testIdentifier)
 	require.NoError(t, err)
 
 	decision := state.Decide(2, 10)
@@ -572,7 +585,6 @@ func TestDecide_NoPendingRunsConstrainedByMinASGSize_ScalesDownBy1(t *testing.T)
 	require.Equal(t, internal.ScalingDirectionDown, decision.ScalingDirection)
 	require.Equal(t, 1, decision.ScalingSize)
 	require.ElementsMatch(t, []string{
-		"need to kill 2 workers, but can't get below minimum size of 1",
 		"removing 1 idle workers",
 	}, decision.Comments)
 }
@@ -595,7 +607,7 @@ func TestDecide_NoPendingRunsNotConstrainedByMinASGSize_ScalesDownBy2(t *testing
 		AutoscalingScaleDownDelay: 50,
 	}
 
-	state, err := internal.NewState(workerPool, asg, cfg, testLogger())
+	state, err := internal.NewState(workerPool, asg, cfg, testLogger(), testIdentifier)
 	require.NoError(t, err)
 
 	decision := state.Decide(2, 10)
@@ -638,7 +650,7 @@ func TestDecide_WaitingForIdleWorkers_NoScaling(t *testing.T) {
 		AutoscalingScaleDownDelay: 50,
 	}
 
-	state, err := internal.NewState(workerPool, asg, cfg, testLogger())
+	state, err := internal.NewState(workerPool, asg, cfg, testLogger(), testIdentifier)
 	require.NoError(t, err)
 
 	decision := state.Decide(2, 10)

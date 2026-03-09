@@ -22,7 +22,13 @@ type State struct {
 	cfg                  RuntimeConfig
 }
 
-func NewState(workerPool *WorkerPool, asg *AutoScalingGroup, cfg RuntimeConfig, logger *slog.Logger) (*State, error) {
+// InstanceIdentifier is implemented by controllers to extract platform-specific
+// identity information from worker metadata.
+type InstanceIdentifier interface {
+	InstanceIdentity(worker *Worker) (groupID GroupID, instanceID InstanceID, err error)
+}
+
+func NewState(workerPool *WorkerPool, asg *AutoScalingGroup, cfg RuntimeConfig, logger *slog.Logger, identifier InstanceIdentifier) (*State, error) {
 	workersByInstanceID := make(map[InstanceID]Worker)
 	inServiceInstanceIDs := make(map[InstanceID]struct{})
 	validWorkerCount := 0
@@ -45,7 +51,7 @@ func NewState(workerPool *WorkerPool, asg *AutoScalingGroup, cfg RuntimeConfig, 
 	}
 
 	for _, worker := range workerPool.Workers {
-		groupID, instanceID, err := worker.InstanceIdentity()
+		groupID, instanceID, err := identifier.InstanceIdentity(&worker)
 
 		if err != nil {
 			logger.Warn("worker has invalid metadata, will treat as stray instance",
@@ -161,6 +167,13 @@ func (s *State) Decide(maxCreate, maxKill int) Decision {
 	scalable := s.ScalableWorkers()
 
 	difference := int(s.WorkerPool.PendingRuns) - len(scalable)
+
+	// Enforce minimum size: if we're below the floor, ensure we scale up
+	// to at least MinSize. AWS ASGs enforce this natively; GCP and Azure
+	// rely on the autoscaler.
+	if belowMin := s.ASG.MinSize - s.ASG.DesiredCapacity; belowMin > difference {
+		difference = belowMin
+	}
 
 	if difference > 0 {
 		return s.determineScaleUp(difference, maxCreate)

@@ -2,6 +2,7 @@ package internal_test
 
 import (
 	"bytes"
+	"errors"
 	"log/slog"
 	"testing"
 	"time"
@@ -11,6 +12,26 @@ import (
 
 	"github.com/spacelift-io/awsautoscalr/internal"
 )
+
+// setupInstanceIdentityMock configures the mock to extract AWS-style identity from worker metadata.
+// This simulates AWS controller behavior using asg_id and instance_id metadata keys.
+func setupInstanceIdentityMock(ctrl *MockController) {
+	ctrl.On("InstanceIdentity", mock.AnythingOfType("*internal.Worker")).Maybe().Return(
+		func(w *internal.Worker) internal.GroupID {
+			groupID, _ := w.MetadataValue("asg_id")
+			return internal.GroupID(groupID)
+		},
+		func(w *internal.Worker) internal.InstanceID {
+			instanceID, _ := w.MetadataValue("instance_id")
+			return internal.InstanceID(instanceID)
+		},
+		func(w *internal.Worker) error {
+			_, groupErr := w.MetadataValue("asg_id")
+			_, instanceErr := w.MetadataValue("instance_id")
+			return errors.Join(groupErr, instanceErr)
+		},
+	)
+}
 
 func TestAutoScalerScalingNone(t *testing.T) {
 	var buf bytes.Buffer
@@ -22,6 +43,8 @@ func TestAutoScalerScalingNone(t *testing.T) {
 	defer ctrl.AssertExpectations(t)
 
 	scaler := internal.NewAutoScaler(ctrl, slog.New(h))
+
+	setupInstanceIdentityMock(ctrl)
 
 	ctrl.On("GetWorkerPool", mock.Anything).Return(&internal.WorkerPool{
 		Workers: []internal.Worker{
@@ -51,6 +74,8 @@ func TestAutoScalerScalingUp(t *testing.T) {
 	defer ctrl.AssertExpectations(t)
 
 	scaler := internal.NewAutoScaler(ctrl, slog.New(h))
+
+	setupInstanceIdentityMock(ctrl)
 
 	ctrl.On("GetWorkerPool", mock.Anything).Return(&internal.WorkerPool{
 		Workers: []internal.Worker{
@@ -87,6 +112,8 @@ func TestAutoScalerScalingDown(t *testing.T) {
 	defer ctrl.AssertExpectations(t)
 
 	scaler := internal.NewAutoScaler(ctrl, slog.New(h))
+
+	setupInstanceIdentityMock(ctrl)
 
 	ctrl.On("GetWorkerPool", mock.Anything).Return(&internal.WorkerPool{
 		Workers: []internal.Worker{
@@ -126,6 +153,8 @@ func TestAutoScalerDetachedNotTerminatedInstances(t *testing.T) {
 	defer ctrl.AssertExpectations(t)
 
 	scaler := internal.NewAutoScaler(ctrl, slog.New(h))
+
+	setupInstanceIdentityMock(ctrl)
 
 	ctrl.On("GetWorkerPool", mock.Anything).Return(&internal.WorkerPool{
 		Workers: []internal.Worker{
@@ -176,6 +205,8 @@ func TestAutoScalerDesiredCapacitySanityCheck(t *testing.T) {
 
 	scaler := internal.NewAutoScaler(ctrl, slog.New(h))
 
+	setupInstanceIdentityMock(ctrl)
+
 	// Simulate AWS outage scenario: ASG desired capacity is 79,
 	// but we only have 3 workers and 5 pending runs
 	ctrl.On("GetWorkerPool", mock.Anything).Return(&internal.WorkerPool{
@@ -220,8 +251,8 @@ func TestAutoScalerDesiredCapacitySanityCheck(t *testing.T) {
 
 	// Verify that error logs contain the sanity check message
 	logOutput := buf.String()
-	require.Contains(t, logOutput, "ASG desired capacity is suspiciously high")
-	require.Contains(t, logOutput, "attempting to reset ASG desired capacity")
+	require.Contains(t, logOutput, "desired capacity is suspiciously high")
+	require.Contains(t, logOutput, "attempting to reset desired capacity to sane value")
 }
 
 func TestAutoScalerDesiredCapacitySanityCheckRespectsMinSize(t *testing.T) {
@@ -236,6 +267,8 @@ func TestAutoScalerDesiredCapacitySanityCheckRespectsMinSize(t *testing.T) {
 	defer ctrl.AssertExpectations(t)
 
 	scaler := internal.NewAutoScaler(ctrl, slog.New(h))
+
+	setupInstanceIdentityMock(ctrl)
 
 	// ASG desired capacity is 50, but we have 0 workers and 0 pending runs
 	// Reset should respect min size of 3
@@ -271,6 +304,8 @@ func TestAutoScalerDesiredCapacitySanityCheckNoResetWhenReasonable(t *testing.T)
 	defer ctrl.AssertExpectations(t)
 
 	scaler := internal.NewAutoScaler(ctrl, slog.New(h))
+
+	setupInstanceIdentityMock(ctrl)
 
 	// ASG desired capacity is 10, we have 8 workers and 2 pending runs
 	// This is reasonable (8 + 2 = 10), so no reset should occur
