@@ -13,6 +13,14 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v6
 
+      - name: Checkout license check action
+        uses: actions/checkout@v6
+        with:
+          repository: spacelift-io/upload-dependencies-to-notion
+          ref: main
+          path: .github/actions/license-check
+          token: ${{ secrets.GH_PAT }}
+
 #      - name: "Get license configuration"
 #        run: |
 #          ignored_packages=$(cat .github/licenses.yml | yq -r '.ignored_packages | join(",")')
@@ -23,7 +31,7 @@ jobs:
         with: { go-version-file: go.mod }
 
       - name: Check licenses
-        uses: spacelift-io/upload-dependencies-to-notion/.github/actions/check-go-licenses@main
+        uses: ./.github/actions/license-check/.github/actions/check-go-licenses
         with:
           package_paths: "./cmd/cloudrun ./cmd/local ./cmd/lambda ./cmd/azurefunc"
 #          ignored_packages: "${{ env.IGNORED_PACKAGES }}"
