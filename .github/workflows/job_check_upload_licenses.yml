@@ -1,8 +1,11 @@
-name: Check Go Dependency Licenses
+name: Check and Upload Go Dependency Licenses
+
+permissions:
+  contents: read
 
 on:
   workflow_call:
-  pull_request:
+  push:
 
 jobs:
   check-go-dependency-licenses:
@@ -21,11 +24,6 @@ jobs:
           path: .github/actions/license-check
           token: ${{ secrets.GH_PAT }}
 
-#      - name: "Get license configuration"
-#        run: |
-#          ignored_packages=$(cat .github/licenses.yml | yq -r '.ignored_packages | join(",")')
-#          echo "IGNORED_PACKAGES=${ignored_packages}" > "$GITHUB_ENV"
-
       - name: Set up Go
         uses: actions/setup-go@v6
         with: { go-version-file: go.mod }
@@ -34,4 +32,13 @@ jobs:
         uses: ./.github/actions/license-check/.github/actions/check-go-licenses
         with:
           package_paths: "./cmd/cloudrun ./cmd/local ./cmd/lambda ./cmd/azurefunc"
-#          ignored_packages: "${{ env.IGNORED_PACKAGES }}"
+
+      - name: Upload to Notion
+        if: ${{ github.ref == 'refs/heads/main' }}
+        uses: ./.github/actions/license-check
+        with:
+          package_paths: "./cmd/cloudrun ./cmd/local ./cmd/lambda ./cmd/azurefunc"
+          application_name: "Workerpool Autoscaler"
+          notion_root_page_id: ${{ vars.NOTION_DEPENDENCY_UPLOAD_ROOT_PAGE_ID }}
+          notion_requests_per_second: "10"
+          notion_upload_token: ${{ secrets.NOTION_DEPENDENCY_UPLOAD_TOKEN }}
