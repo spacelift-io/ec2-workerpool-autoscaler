@@ -25,5 +25,5 @@ jobs:
       - name: Check licenses
         uses: spacelift-io/upload-dependencies-to-notion/.github/actions/check-go-licenses@main
         with:
-          package_paths: "./cmd/spacelift ./cmd/spacelift-launcher ./cmd/spacelift-worker"
+          package_paths: "./cmd/cloudrun ./cmd/local ./cmd/lambda ./cmd/azurefunc"
 #          ignored_packages: "${{ env.IGNORED_PACKAGES }}"
