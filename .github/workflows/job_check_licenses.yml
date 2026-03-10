@@ -1,0 +1,29 @@
+name: Check Go Dependency Licenses
+
+on:
+  workflow_call:
+  pull_request:
+
+jobs:
+  check-go-dependency-licenses:
+    name: "Check Go dependency licenses"
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+#      - name: "Get license configuration"
+#        run: |
+#          ignored_packages=$(cat .github/licenses.yml | yq -r '.ignored_packages | join(",")')
+#          echo "IGNORED_PACKAGES=${ignored_packages}" > "$GITHUB_ENV"
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with: { go-version-file: go.mod }
+
+      - name: Check licenses
+        uses: spacelift-io/upload-dependencies-to-notion/.github/actions/check-go-licenses@main
+        with:
+          package_paths: "./cmd/spacelift ./cmd/spacelift-launcher ./cmd/spacelift-worker"
+#          ignored_packages: "${{ env.IGNORED_PACKAGES }}"
