@@ -1,0 +1,37 @@
+name: Check Go Dependency Licenses
+
+on:
+  workflow_call:
+  pull_request:
+
+jobs:
+  check-go-dependency-licenses:
+    name: "Check Go dependency licenses"
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Checkout license check action
+        uses: actions/checkout@v6
+        with:
+          repository: spacelift-io/upload-dependencies-to-notion
+          ref: main
+          path: .github/actions/license-check
+          token: ${{ secrets.GH_PAT }}
+
+#      - name: "Get license configuration"
+#        run: |
+#          ignored_packages=$(cat .github/licenses.yml | yq -r '.ignored_packages | join(",")')
+#          echo "IGNORED_PACKAGES=${ignored_packages}" > "$GITHUB_ENV"
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with: { go-version-file: go.mod }
+
+      - name: Check licenses
+        uses: ./.github/actions/license-check/.github/actions/check-go-licenses
+        with:
+          package_paths: "./cmd/cloudrun ./cmd/local ./cmd/lambda ./cmd/azurefunc"
+#          ignored_packages: "${{ env.IGNORED_PACKAGES }}"
