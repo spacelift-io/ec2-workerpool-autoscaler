@@ -68,7 +68,9 @@ func TestAutoScalerScalingUp(t *testing.T) {
 	var buf bytes.Buffer
 	h := slog.NewTextHandler(&buf, nil)
 
-	cfg := internal.RuntimeConfig{}
+	cfg := internal.RuntimeConfig{
+		AutoscalingMaxCreate: 2,
+	}
 
 	ctrl := new(MockController)
 	defer ctrl.AssertExpectations(t)
@@ -90,7 +92,7 @@ func TestAutoScalerScalingUp(t *testing.T) {
 		Name:            "group",
 		MinSize:         1,
 		MaxSize:         3,
-		DesiredCapacity: 2,
+		DesiredCapacity: 1,
 		Instances: []internal.Instance{
 			{ID: "instance"},
 		},
@@ -240,11 +242,11 @@ func TestAutoScalerDesiredCapacitySanityCheck(t *testing.T) {
 	}, nil)
 
 	// Expected behavior:
-	// 1. Autoscaler should first reset capacity to 8 (3 workers + 5 pending runs)
-	// 2. Then normal scaling logic continues: with 3 idle workers and 5 pending runs,
-	//    it needs 2 more workers, so scales from 8 to 10
+	// 1. Sanity check resets capacity to 8 (3 workers + 5 pending runs)
+	// 2. The scaling guard sees desired capacity (8) != valid workers (3) and
+	//    correctly blocks further scaling this tick. This also prevents
+	//    double-counting pending runs that were already accounted for in the reset.
 	ctrl.On("ScaleUpASG", mock.Anything, 8).Return(nil).Once()
-	ctrl.On("ScaleUpASG", mock.Anything, 10).Return(nil).Once()
 
 	err := scaler.Scale(t.Context(), cfg)
 	require.NoError(t, err)
@@ -253,6 +255,7 @@ func TestAutoScalerDesiredCapacitySanityCheck(t *testing.T) {
 	logOutput := buf.String()
 	require.Contains(t, logOutput, "desired capacity is suspiciously high")
 	require.Contains(t, logOutput, "attempting to reset desired capacity to sane value")
+	require.Contains(t, logOutput, "not scaling the ASG")
 }
 
 func TestAutoScalerDesiredCapacitySanityCheckRespectsMinSize(t *testing.T) {

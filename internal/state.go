@@ -157,10 +157,10 @@ func (s *State) detachedNotTerminatedInstances() []string {
 }
 
 func (s *State) Decide(maxCreate, maxKill int) Decision {
-	if s.validWorkerCount != len(s.ASG.Instances) {
+	if s.validWorkerCount != s.ASG.DesiredCapacity {
 		return Decision{
 			ScalingDirection: ScalingDirectionNone,
-			Comments:         []string{"number of valid workers does not match the number of instances in the ASG"},
+			Comments:         []string{"number of valid workers does not match the desired capacity of the ASG"},
 		}
 	}
 

@@ -354,9 +354,9 @@ func TestScalableWorkers_ReturnsIdleWorkers(t *testing.T) {
 func TestDecide_NoWorkersNoPendingRunsNoInstances_NoScaling(t *testing.T) {
 	asg := &internal.AutoScalingGroup{
 		Name:            "asg-name",
-		MinSize:         1,
+		MinSize:         0,
 		MaxSize:         2,
-		DesiredCapacity: 2,
+		DesiredCapacity: 0,
 	}
 	workerPool := &internal.WorkerPool{}
 	cfg := internal.RuntimeConfig{
@@ -393,7 +393,159 @@ func TestDecide_NoWorkersNoPendingRunsWithInstances_NoScalingNotInBalance(t *tes
 
 	require.Equal(t, internal.ScalingDirectionNone, decision.ScalingDirection)
 	require.Zero(t, decision.ScalingSize)
-	require.ElementsMatch(t, []string{"number of valid workers does not match the number of instances in the ASG"}, decision.Comments)
+	require.ElementsMatch(t, []string{"number of valid workers does not match the desired capacity of the ASG"}, decision.Comments)
+}
+
+func TestDecide_TerminatingInstanceDoesNotBlockScaleUp(t *testing.T) {
+	// Scenario: autoscaler previously scaled down, the instance is mid-deletion
+	// (still visible in the instance list) but desired capacity is already decremented.
+	// A new run arrives and the autoscaler should scale up without being blocked.
+	asg := &internal.AutoScalingGroup{
+		Name:            "asg-name",
+		MinSize:         0,
+		MaxSize:         5,
+		DesiredCapacity: 0, // Already decremented by the scale-down
+		Instances: []internal.Instance{
+			{ID: "i-dying", LifecycleState: internal.LifecycleStateTerminating},
+		},
+	}
+	workerPool := &internal.WorkerPool{
+		PendingRuns: 1,
+	}
+	cfg := internal.RuntimeConfig{}
+
+	state, err := internal.NewState(workerPool, asg, cfg, testLogger(), testIdentifier)
+	require.NoError(t, err)
+
+	decision := state.Decide(1, 1)
+
+	require.Equal(t, internal.ScalingDirectionUp, decision.ScalingDirection)
+	require.Equal(t, 1, decision.ScalingSize)
+}
+
+func TestDecide_CreatingInstancePreventsDoubleScaleUp(t *testing.T) {
+	// Scenario: autoscaler previously scaled up (desired=2), one instance is
+	// running with a registered worker, the other is still creating. The guard
+	// should block to prevent a second scale-up for the same demand.
+	const asgName = "asg-name"
+	asg := &internal.AutoScalingGroup{
+		Name:            asgName,
+		MinSize:         0,
+		MaxSize:         5,
+		DesiredCapacity: 2,
+		Instances: []internal.Instance{
+			{ID: "i-running", LifecycleState: internal.LifecycleStateInService},
+			{ID: "i-creating", LifecycleState: "CREATING"},
+		},
+	}
+	workerPool := &internal.WorkerPool{
+		PendingRuns: 1,
+		Workers: []internal.Worker{
+			{
+				ID: "worker-1",
+				Metadata: mustJSON(map[string]any{
+					"asg_id":      asgName,
+					"instance_id": "i-running",
+				}),
+			},
+		},
+	}
+	cfg := internal.RuntimeConfig{}
+
+	state, err := internal.NewState(workerPool, asg, cfg, testLogger(), testIdentifier)
+	require.NoError(t, err)
+
+	decision := state.Decide(2, 2)
+
+	require.Equal(t, internal.ScalingDirectionNone, decision.ScalingDirection)
+	require.ElementsMatch(t, []string{"number of valid workers does not match the desired capacity of the ASG"}, decision.Comments)
+}
+
+func TestDecide_MixedStateTerminatingInstanceWithPendingRuns(t *testing.T) {
+	// Scenario: 2 workers active, 1 instance was scaled down and is terminating.
+	// Desired capacity already decremented to 2. New pending runs arrive.
+	// The guard should pass and allow scale-up.
+	const asgName = "asg-name"
+	asg := &internal.AutoScalingGroup{
+		Name:            asgName,
+		MinSize:         0,
+		MaxSize:         10,
+		DesiredCapacity: 2, // Decremented from 3 when termination was initiated
+		Instances: []internal.Instance{
+			{ID: "i-1", LifecycleState: internal.LifecycleStateInService},
+			{ID: "i-2", LifecycleState: internal.LifecycleStateInService},
+			{ID: "i-dying", LifecycleState: internal.LifecycleStateTerminating},
+		},
+	}
+	workerPool := &internal.WorkerPool{
+		PendingRuns: 3,
+		Workers: []internal.Worker{
+			{
+				ID:   "worker-1",
+				Busy: true,
+				Metadata: mustJSON(map[string]any{
+					"asg_id":      asgName,
+					"instance_id": "i-1",
+				}),
+			},
+			{
+				ID:   "worker-2",
+				Busy: true,
+				Metadata: mustJSON(map[string]any{
+					"asg_id":      asgName,
+					"instance_id": "i-2",
+				}),
+			},
+		},
+	}
+	cfg := internal.RuntimeConfig{}
+
+	state, err := internal.NewState(workerPool, asg, cfg, testLogger(), testIdentifier)
+	require.NoError(t, err)
+
+	decision := state.Decide(5, 2)
+
+	require.Equal(t, internal.ScalingDirectionUp, decision.ScalingDirection)
+	require.Equal(t, 3, decision.ScalingSize)
+}
+
+func TestDecide_PreemptedInstanceWithReplacementCreating(t *testing.T) {
+	// Scenario: a VM was preempted (terminating), the cloud is auto-replacing it
+	// (creating), and the old worker is still registered in Spacelift.
+	// Desired capacity unchanged. Guard should pass since validWorkers == desired.
+	const asgName = "asg-name"
+	asg := &internal.AutoScalingGroup{
+		Name:            asgName,
+		MinSize:         1,
+		MaxSize:         5,
+		DesiredCapacity: 1, // Unchanged — cloud will replace the preempted instance
+		Instances: []internal.Instance{
+			{ID: "i-preempted", LifecycleState: internal.LifecycleStateTerminating},
+			{ID: "i-replacement", LifecycleState: "CREATING"},
+		},
+	}
+	workerPool := &internal.WorkerPool{
+		Workers: []internal.Worker{
+			{
+				ID: "old-worker",
+				Metadata: mustJSON(map[string]any{
+					"asg_id":      asgName,
+					"instance_id": "i-preempted",
+				}),
+			},
+		},
+	}
+	cfg := internal.RuntimeConfig{}
+
+	state, err := internal.NewState(workerPool, asg, cfg, testLogger(), testIdentifier)
+	require.NoError(t, err)
+
+	decision := state.Decide(2, 2)
+
+	// validWorkers=1, desired=1 → guard passes.
+	// No pending runs, 1 scalable worker → no scaling needed.
+	require.Equal(t, internal.ScalingDirectionNone, decision.ScalingDirection)
+	require.ElementsMatch(t, []string{"autoscaling group exactly at the right size"}, decision.Comments)
 }
 
 func TestDecide_NoWorkersPendingRunsAtMaxSize_NoScaling(t *testing.T) {
