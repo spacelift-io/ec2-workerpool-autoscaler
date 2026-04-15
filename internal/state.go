@@ -108,9 +108,18 @@ func (s *State) ScalableWorkers() []Worker {
 		// Even though the worker might be idle, we will give it some time to pick up more work
 		// if the customer wants
 		if s.cfg.AutoscalingScaleDownDelay != 0 {
-			workerCreationTime := time.Unix(int64(worker.CreatedAt), 0)
-			minimumAliveTime := workerCreationTime.Add(time.Duration(s.cfg.AutoscalingScaleDownDelay) * time.Minute)
-			if !time.Now().After(minimumAliveTime) {
+			// Use availableAt (when worker became idle) if set, otherwise fall back
+			// to createdAt for backward compatibility with workers created before
+			// the backend started tracking availableAt.
+			var idleSince time.Time
+			if worker.AvailableAt != nil {
+				idleSince = time.Unix(int64(*worker.AvailableAt), 0)
+			} else {
+				idleSince = time.Unix(int64(worker.CreatedAt), 0)
+			}
+
+			minimumIdleTime := idleSince.Add(time.Duration(s.cfg.AutoscalingScaleDownDelay) * time.Minute)
+			if !time.Now().After(minimumIdleTime) {
 				continue
 			}
 		}

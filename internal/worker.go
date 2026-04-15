@@ -9,11 +9,12 @@ type GroupID string
 type InstanceID string
 
 type Worker struct {
-	ID        string `graphql:"id" json:"id"`
-	Busy      bool   `graphql:"busy" json:"busy"`
-	CreatedAt int32  `graphql:"createdAt" json:"createdAt"`
-	Drained   bool   `graphql:"drained" json:"drained"`
-	Metadata  string `graphql:"metadata" json:"metadata"`
+	ID          string `graphql:"id" json:"id"`
+	Busy        bool   `graphql:"busy" json:"busy"`
+	CreatedAt   int32  `graphql:"createdAt" json:"createdAt"`
+	AvailableAt *int32 `graphql:"availableAt" json:"availableAt"`
+	Drained     bool   `graphql:"drained" json:"drained"`
+	Metadata    string `graphql:"metadata" json:"metadata"`
 }
 
 func (w *Worker) metadata() (map[string]string, error) {

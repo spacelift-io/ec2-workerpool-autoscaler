@@ -812,6 +812,125 @@ func TestDecide_WaitingForIdleWorkers_NoScaling(t *testing.T) {
 	require.ElementsMatch(t, []string{"autoscaling group exactly at the right size"}, decision.Comments)
 }
 
+func TestScalableWorkers_WithAvailableAt_UsesAvailableAtForIdleTime(t *testing.T) {
+	asg := &internal.AutoScalingGroup{
+		Name:            "asg-name",
+		MinSize:         0,
+		MaxSize:         10,
+		DesiredCapacity: 1,
+	}
+
+	// Worker created 10 minutes ago but became available (idle) just now
+	createdAt := int32(time.Now().Add(-10 * time.Minute).Unix())
+	availableAt := int32(time.Now().Unix()) // just became idle
+
+	workerPool := &internal.WorkerPool{
+		Workers: []internal.Worker{
+			{
+				ID:          "worker-with-available-at",
+				Busy:        false,
+				CreatedAt:   createdAt,
+				AvailableAt: &availableAt,
+				Metadata: mustJSON(map[string]any{
+					"asg_id":      "asg-name",
+					"instance_id": "i-1",
+				}),
+			},
+		},
+	}
+	cfg := internal.RuntimeConfig{
+		AutoscalingScaleDownDelay: 5, // 5 minute delay
+	}
+
+	state, err := internal.NewState(workerPool, asg, cfg, testLogger(), testIdentifier)
+	require.NoError(t, err)
+
+	scalableWorkers := state.ScalableWorkers()
+
+	// Worker should NOT be scalable because it just became available (< 5 min idle)
+	// even though it was created 10 minutes ago
+	require.Empty(t, scalableWorkers, "worker should not be scalable because availableAt is recent")
+}
+
+func TestScalableWorkers_WithAvailableAt_IdleLongEnough_IsScalable(t *testing.T) {
+	asg := &internal.AutoScalingGroup{
+		Name:            "asg-name",
+		MinSize:         0,
+		MaxSize:         10,
+		DesiredCapacity: 1,
+	}
+
+	// Worker became available 10 minutes ago
+	createdAt := int32(time.Now().Add(-30 * time.Minute).Unix())
+	availableAt := int32(time.Now().Add(-10 * time.Minute).Unix())
+
+	workerPool := &internal.WorkerPool{
+		Workers: []internal.Worker{
+			{
+				ID:          "worker-idle-long-enough",
+				Busy:        false,
+				CreatedAt:   createdAt,
+				AvailableAt: &availableAt,
+				Metadata: mustJSON(map[string]any{
+					"asg_id":      "asg-name",
+					"instance_id": "i-1",
+				}),
+			},
+		},
+	}
+	cfg := internal.RuntimeConfig{
+		AutoscalingScaleDownDelay: 5, // 5 minute delay
+	}
+
+	state, err := internal.NewState(workerPool, asg, cfg, testLogger(), testIdentifier)
+	require.NoError(t, err)
+
+	scalableWorkers := state.ScalableWorkers()
+
+	// Worker should be scalable because it's been idle for 10 minutes (> 5 min delay)
+	require.Len(t, scalableWorkers, 1)
+	require.Equal(t, "worker-idle-long-enough", scalableWorkers[0].ID)
+}
+
+func TestScalableWorkers_WithoutAvailableAt_FallsBackToCreatedAt(t *testing.T) {
+	asg := &internal.AutoScalingGroup{
+		Name:            "asg-name",
+		MinSize:         0,
+		MaxSize:         10,
+		DesiredCapacity: 1,
+	}
+
+	// Worker created 10 minutes ago, no availableAt (legacy worker)
+	createdAt := int32(time.Now().Add(-10 * time.Minute).Unix())
+
+	workerPool := &internal.WorkerPool{
+		Workers: []internal.Worker{
+			{
+				ID:          "legacy-worker",
+				Busy:        false,
+				CreatedAt:   createdAt,
+				AvailableAt: nil, // not set - legacy worker
+				Metadata: mustJSON(map[string]any{
+					"asg_id":      "asg-name",
+					"instance_id": "i-1",
+				}),
+			},
+		},
+	}
+	cfg := internal.RuntimeConfig{
+		AutoscalingScaleDownDelay: 5, // 5 minute delay
+	}
+
+	state, err := internal.NewState(workerPool, asg, cfg, testLogger(), testIdentifier)
+	require.NoError(t, err)
+
+	scalableWorkers := state.ScalableWorkers()
+
+	// Worker should be scalable because createdAt is 10 minutes ago (> 5 min delay)
+	require.Len(t, scalableWorkers, 1)
+	require.Equal(t, "legacy-worker", scalableWorkers[0].ID)
+}
+
 func nullable[T any](t T) *T {
 	out := t
 	return &out
