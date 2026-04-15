@@ -140,7 +140,7 @@ func TestAutoScalerScalingDown(t *testing.T) {
 		},
 	}, nil)
 	ctrl.On("DrainWorker", mock.Anything, "1").Return(true, nil)
-	ctrl.On("KillInstance", mock.Anything, "instance").Return(nil)
+	ctrl.On("KillInstance", mock.Anything, "instance", true).Return(nil)
 	err := scaler.Scale(t.Context(), cfg)
 	require.NoError(t, err)
 }
@@ -181,7 +181,7 @@ func TestAutoScalerDetachedNotTerminatedInstances(t *testing.T) {
 			{ID: "instance"},
 		},
 	}, nil)
-	ctrl.On("KillInstance", mock.Anything, "detached").Return(nil)
+	ctrl.On("KillInstance", mock.Anything, "detached", false).Return(nil)
 	output := []internal.Instance{{
 		ID:         "detached",
 		LaunchTime: time.Now().Add(-time.Hour),

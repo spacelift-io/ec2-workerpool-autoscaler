@@ -452,7 +452,7 @@ func TestAzureKillInstance_DeleteCallFails_SendsCorrectInput(t *testing.T) {
 		}),
 	).Return(errors.New("bacon"))
 
-	_ = sut.KillInstance(t.Context(), instanceID)
+	_ = sut.KillInstance(t.Context(), instanceID, false)
 
 	require.Equal(t, azureResourceGroupName, capturedRG)
 	require.Equal(t, azureVMSSName, capturedVMSS)
@@ -467,7 +467,7 @@ func TestAzureKillInstance_DeleteCallFails_ReturnsError(t *testing.T) {
 	mockCompute.On("DeleteVMScaleSetVM", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
 		Return(errors.New("bacon"))
 
-	err := sut.KillInstance(t.Context(), instanceID)
+	err := sut.KillInstance(t.Context(), instanceID, false)
 
 	require.EqualError(t, err, "could not delete Azure VMSS VM instance: bacon")
 }
@@ -480,7 +480,7 @@ func TestAzureKillInstance_Success_NoError(t *testing.T) {
 	mockCompute.On("DeleteVMScaleSetVM", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
 		Return(nil)
 
-	err := sut.KillInstance(t.Context(), instanceID)
+	err := sut.KillInstance(t.Context(), instanceID, false)
 
 	require.NoError(t, err)
 }

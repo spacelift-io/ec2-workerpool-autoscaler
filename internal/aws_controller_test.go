@@ -501,7 +501,7 @@ func TestDrainWorker_WorkerBusy_UndrainCallSucceeds_ReportsNotDrained(t *testing
 
 // KillInstance tests
 
-func TestKillInstance_DetachCallFails_SendsCorrectInput(t *testing.T) {
+func TestKillInstance_DecrementTrue_PassedToDetach(t *testing.T) {
 	const instanceID = "test-instance"
 
 	sut, mockAutoscaling, _, _ := setupController()
@@ -517,12 +517,38 @@ func TestKillInstance_DetachCallFails_SendsCorrectInput(t *testing.T) {
 		mock.Anything,
 	).Return(nil, errors.New("bacon"))
 
-	_ = sut.KillInstance(t.Context(), instanceID)
+	_ = sut.KillInstance(t.Context(), instanceID, true)
 
 	require.NotNil(t, capturedInput)
 	require.Contains(t, capturedInput.InstanceIds, instanceID)
 	require.Equal(t, asgName, *capturedInput.AutoScalingGroupName)
 	require.True(t, *capturedInput.ShouldDecrementDesiredCapacity)
+}
+
+func TestKillInstance_DecrementFalse_PassedToDetach(t *testing.T) {
+	const instanceID = "test-instance"
+
+	sut, mockAutoscaling, mockEC2, _ := setupController()
+
+	var capturedInput *autoscaling.DetachInstancesInput
+	mockAutoscaling.On(
+		"DetachInstances",
+		mock.Anything,
+		mock.MatchedBy(func(in *autoscaling.DetachInstancesInput) bool {
+			capturedInput = in
+			return true
+		}),
+		mock.Anything,
+	).Return(nil, nil)
+
+	mockEC2.On("TerminateInstances", mock.Anything, mock.Anything, mock.Anything).
+		Return(nil, nil)
+
+	err := sut.KillInstance(t.Context(), instanceID, false)
+
+	require.NoError(t, err)
+	require.NotNil(t, capturedInput)
+	require.False(t, *capturedInput.ShouldDecrementDesiredCapacity)
 }
 
 func TestKillInstance_DetachCallFails_ReturnsError(t *testing.T) {
@@ -533,7 +559,7 @@ func TestKillInstance_DetachCallFails_ReturnsError(t *testing.T) {
 	mockAutoscaling.On("DetachInstances", mock.Anything, mock.Anything, mock.Anything).
 		Return(nil, errors.New("bacon"))
 
-	err := sut.KillInstance(t.Context(), instanceID)
+	err := sut.KillInstance(t.Context(), instanceID, true)
 
 	require.EqualError(t, err, "could not detach instance from autoscaling group: bacon")
 }
@@ -549,7 +575,7 @@ func TestKillInstance_InstanceNotPartOfASG_ReturnsError(t *testing.T) {
 	mockEC2.On("TerminateInstances", mock.Anything, mock.Anything, mock.Anything).
 		Return(nil, errors.New("bacon"))
 
-	err := sut.KillInstance(t.Context(), instanceID)
+	err := sut.KillInstance(t.Context(), instanceID, true)
 
 	require.EqualError(t, err, "could not terminate detached instance: bacon")
 }
@@ -573,7 +599,7 @@ func TestKillInstance_TerminateCallFails_SendsCorrectInput(t *testing.T) {
 		mock.Anything,
 	).Return(nil, errors.New("bacon"))
 
-	_ = sut.KillInstance(t.Context(), instanceID)
+	_ = sut.KillInstance(t.Context(), instanceID, true)
 
 	require.NotNil(t, capturedInput)
 	require.Contains(t, capturedInput.InstanceIds, instanceID)
@@ -590,7 +616,7 @@ func TestKillInstance_TerminateCallFails_ReturnsError(t *testing.T) {
 	mockEC2.On("TerminateInstances", mock.Anything, mock.Anything, mock.Anything).
 		Return(nil, errors.New("bacon"))
 
-	err := sut.KillInstance(t.Context(), instanceID)
+	err := sut.KillInstance(t.Context(), instanceID, true)
 
 	require.EqualError(t, err, "could not terminate detached instance: bacon")
 }
@@ -606,7 +632,7 @@ func TestKillInstance_Success_NoError(t *testing.T) {
 	mockEC2.On("TerminateInstances", mock.Anything, mock.Anything, mock.Anything).
 		Return(nil, nil)
 
-	err := sut.KillInstance(t.Context(), instanceID)
+	err := sut.KillInstance(t.Context(), instanceID, true)
 
 	require.NoError(t, err)
 }

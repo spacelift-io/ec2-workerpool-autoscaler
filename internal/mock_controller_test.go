@@ -185,17 +185,17 @@ func (_m *MockController) InstanceIdentity(worker *internal.Worker) (internal.Gr
 	return r0, r1, r2
 }
 
-// KillInstance provides a mock function with given fields: ctx, instanceID
-func (_m *MockController) KillInstance(ctx context.Context, instanceID string) error {
-	ret := _m.Called(ctx, instanceID)
+// KillInstance provides a mock function with given fields: ctx, instanceID, decrementCapacity
+func (_m *MockController) KillInstance(ctx context.Context, instanceID string, decrementCapacity bool) error {
+	ret := _m.Called(ctx, instanceID, decrementCapacity)
 
 	if len(ret) == 0 {
 		panic("no return value specified for KillInstance")
 	}
 
 	var r0 error
-	if rf, ok := ret.Get(0).(func(context.Context, string) error); ok {
-		r0 = rf(ctx, instanceID)
+	if rf, ok := ret.Get(0).(func(context.Context, string, bool) error); ok {
+		r0 = rf(ctx, instanceID, decrementCapacity)
 	} else {
 		r0 = ret.Error(0)
 	}
