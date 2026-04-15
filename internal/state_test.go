@@ -812,6 +812,144 @@ func TestDecide_WaitingForIdleWorkers_NoScaling(t *testing.T) {
 	require.ElementsMatch(t, []string{"autoscaling group exactly at the right size"}, decision.Comments)
 }
 
+// Target Utilization Tests
+
+func TestDecide_TargetUtilization90Percent_5Workers4Pending_NoScaling(t *testing.T) {
+	// With 90% target utilization and 5 workers, effective capacity = floor(5 * 0.9) = 4
+	// 4 pending runs means difference = 0 → no scaling (maintains 1 spare worker)
+	const asgName = "asg-name"
+	asg := &internal.AutoScalingGroup{
+		Name:            asgName,
+		MinSize:         0,
+		MaxSize:         10,
+		DesiredCapacity: 5,
+	}
+	workerPool := &internal.WorkerPool{
+		PendingRuns: 4,
+		Workers: []internal.Worker{
+			{Metadata: mustJSON(map[string]any{"asg_id": asgName, "instance_id": "i-1"})},
+			{Metadata: mustJSON(map[string]any{"asg_id": asgName, "instance_id": "i-2"})},
+			{Metadata: mustJSON(map[string]any{"asg_id": asgName, "instance_id": "i-3"})},
+			{Metadata: mustJSON(map[string]any{"asg_id": asgName, "instance_id": "i-4"})},
+			{Metadata: mustJSON(map[string]any{"asg_id": asgName, "instance_id": "i-5"})},
+		},
+	}
+	cfg := internal.RuntimeConfig{
+		AutoscalingTargetUtilizationPercent: 90,
+	}
+
+	state, err := internal.NewState(workerPool, asg, cfg, testLogger(), testIdentifier)
+	require.NoError(t, err)
+
+	decision := state.Decide(5, 5)
+
+	require.Equal(t, internal.ScalingDirectionNone, decision.ScalingDirection)
+}
+
+func TestDecide_TargetUtilization90Percent_5Workers5Pending_ScalesUp(t *testing.T) {
+	// With 90% target utilization and 5 workers, effective capacity = floor(5 * 0.9) = 4
+	// 5 pending runs means difference = 1 → scale up by 1
+	const asgName = "asg-name"
+	asg := &internal.AutoScalingGroup{
+		Name:            asgName,
+		MinSize:         0,
+		MaxSize:         10,
+		DesiredCapacity: 5,
+	}
+	workerPool := &internal.WorkerPool{
+		PendingRuns: 5,
+		Workers: []internal.Worker{
+			{Metadata: mustJSON(map[string]any{"asg_id": asgName, "instance_id": "i-1"})},
+			{Metadata: mustJSON(map[string]any{"asg_id": asgName, "instance_id": "i-2"})},
+			{Metadata: mustJSON(map[string]any{"asg_id": asgName, "instance_id": "i-3"})},
+			{Metadata: mustJSON(map[string]any{"asg_id": asgName, "instance_id": "i-4"})},
+			{Metadata: mustJSON(map[string]any{"asg_id": asgName, "instance_id": "i-5"})},
+		},
+	}
+	cfg := internal.RuntimeConfig{
+		AutoscalingTargetUtilizationPercent: 90,
+	}
+
+	state, err := internal.NewState(workerPool, asg, cfg, testLogger(), testIdentifier)
+	require.NoError(t, err)
+
+	decision := state.Decide(5, 5)
+
+	require.Equal(t, internal.ScalingDirectionUp, decision.ScalingDirection)
+	require.Equal(t, 1, decision.ScalingSize)
+}
+
+func TestDecide_TargetUtilization100Percent_BackwardCompatible(t *testing.T) {
+	// With 100% (default) target utilization, behavior should be identical to before
+	// 5 workers, 5 pending → difference = 0 → no scaling
+	const asgName = "asg-name"
+	asg := &internal.AutoScalingGroup{
+		Name:            asgName,
+		MinSize:         0,
+		MaxSize:         10,
+		DesiredCapacity: 5,
+	}
+	workerPool := &internal.WorkerPool{
+		PendingRuns: 5,
+		Workers: []internal.Worker{
+			{Metadata: mustJSON(map[string]any{"asg_id": asgName, "instance_id": "i-1"})},
+			{Metadata: mustJSON(map[string]any{"asg_id": asgName, "instance_id": "i-2"})},
+			{Metadata: mustJSON(map[string]any{"asg_id": asgName, "instance_id": "i-3"})},
+			{Metadata: mustJSON(map[string]any{"asg_id": asgName, "instance_id": "i-4"})},
+			{Metadata: mustJSON(map[string]any{"asg_id": asgName, "instance_id": "i-5"})},
+		},
+	}
+	cfg := internal.RuntimeConfig{
+		AutoscalingTargetUtilizationPercent: 100,
+	}
+
+	state, err := internal.NewState(workerPool, asg, cfg, testLogger(), testIdentifier)
+	require.NoError(t, err)
+
+	decision := state.Decide(5, 5)
+
+	require.Equal(t, internal.ScalingDirectionNone, decision.ScalingDirection)
+}
+
+func TestDecide_TargetUtilization90Percent_ScaleDownMaintainsHeadroom(t *testing.T) {
+	// With 90% target utilization, 10 workers, 9 pending runs
+	// Effective capacity = floor(10 * 0.9) = 9, difference = 9 - 9 = 0 → no scaling
+	// Without headroom (100%): difference = 9 - 10 = -1 → would scale down by 1
+	// This test verifies headroom prevents premature scale-down
+	const asgName = "asg-name"
+	asg := &internal.AutoScalingGroup{
+		Name:            asgName,
+		MinSize:         0,
+		MaxSize:         20,
+		DesiredCapacity: 10,
+	}
+	workerPool := &internal.WorkerPool{
+		PendingRuns: 9,
+		Workers: []internal.Worker{
+			{Metadata: mustJSON(map[string]any{"asg_id": asgName, "instance_id": "i-1"})},
+			{Metadata: mustJSON(map[string]any{"asg_id": asgName, "instance_id": "i-2"})},
+			{Metadata: mustJSON(map[string]any{"asg_id": asgName, "instance_id": "i-3"})},
+			{Metadata: mustJSON(map[string]any{"asg_id": asgName, "instance_id": "i-4"})},
+			{Metadata: mustJSON(map[string]any{"asg_id": asgName, "instance_id": "i-5"})},
+			{Metadata: mustJSON(map[string]any{"asg_id": asgName, "instance_id": "i-6"})},
+			{Metadata: mustJSON(map[string]any{"asg_id": asgName, "instance_id": "i-7"})},
+			{Metadata: mustJSON(map[string]any{"asg_id": asgName, "instance_id": "i-8"})},
+			{Metadata: mustJSON(map[string]any{"asg_id": asgName, "instance_id": "i-9"})},
+			{Metadata: mustJSON(map[string]any{"asg_id": asgName, "instance_id": "i-10"})},
+		},
+	}
+	cfg := internal.RuntimeConfig{
+		AutoscalingTargetUtilizationPercent: 90,
+	}
+
+	state, err := internal.NewState(workerPool, asg, cfg, testLogger(), testIdentifier)
+	require.NoError(t, err)
+
+	decision := state.Decide(10, 10)
+
+	require.Equal(t, internal.ScalingDirectionNone, decision.ScalingDirection)
+}
+
 func TestScalableWorkers_WithAvailableAt_UsesAvailableAtForIdleTime(t *testing.T) {
 	asg := &internal.AutoScalingGroup{
 		Name:            "asg-name",

@@ -3,6 +3,7 @@ package internal
 import (
 	"fmt"
 	"log/slog"
+	"math"
 	"time"
 )
 
@@ -175,7 +176,17 @@ func (s *State) Decide(maxCreate, maxKill int) Decision {
 
 	scalable := s.ScalableWorkers()
 
-	difference := int(s.WorkerPool.PendingRuns) - len(scalable)
+	// Apply target utilization to create headroom. At 90% target, 10 workers
+	// count as 9 effective capacity, prompting scale-up sooner. The result is
+	// floored to favor maintaining headroom: 5 workers at 90% yields 4
+	// effective capacity, not 5.
+	targetUtilization := s.cfg.AutoscalingTargetUtilizationPercent
+	if targetUtilization <= 0 || targetUtilization > 100 {
+		targetUtilization = 100
+	}
+	effectiveScalable := int(math.Floor(float64(len(scalable)) * float64(targetUtilization) / 100.0))
+
+	difference := int(s.WorkerPool.PendingRuns) - effectiveScalable
 
 	// Enforce minimum size: if we're below the floor, ensure we scale up
 	// to at least MinSize. AWS ASGs enforce this natively; GCP and Azure
