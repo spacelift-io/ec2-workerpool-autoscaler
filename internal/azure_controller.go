@@ -392,7 +392,7 @@ func (c *AzureController) GetAutoscalingGroup(ctx context.Context) (out *AutoSca
 // KillInstance deletes a VM instance from the Azure VMSS.
 //
 // Unlike AWS ASG, Azure VMSS automatically adjusts capacity when an instance is deleted.
-func (c *AzureController) KillInstance(ctx context.Context, instanceID string) (err error) {
+func (c *AzureController) KillInstance(ctx context.Context, instanceID string, _ bool) (err error) {
 	ctx, span := c.Tracer.Start(ctx, "azure.vmss.deleteVM")
 	defer span.End()
 

@@ -173,7 +173,7 @@ func (c *AWSController) GetAutoscalingGroup(ctx context.Context) (out *AutoScali
 	return out, nil
 }
 
-func (c *AWSController) KillInstance(ctx context.Context, instanceID string) (err error) {
+func (c *AWSController) KillInstance(ctx context.Context, instanceID string, decrementCapacity bool) (err error) {
 	ctx, span := c.Tracer.Start(ctx, "aws.killinstance")
 	defer span.End()
 
@@ -182,7 +182,7 @@ func (c *AWSController) KillInstance(ctx context.Context, instanceID string) (er
 	_, err = c.Autoscaling.DetachInstances(ctx, &autoscaling.DetachInstancesInput{
 		AutoScalingGroupName:           aws.String(c.AWSAutoscalingGroupName),
 		InstanceIds:                    []string{instanceID},
-		ShouldDecrementDesiredCapacity: aws.Bool(true),
+		ShouldDecrementDesiredCapacity: aws.Bool(decrementCapacity),
 	})
 
 	if err != nil && !strings.Contains(err.Error(), "is not part of Auto Scaling group") {

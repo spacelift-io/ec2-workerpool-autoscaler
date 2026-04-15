@@ -28,10 +28,12 @@ type ControllerInterface interface {
 	GetWorkerPool(ctx context.Context) (out *WorkerPool, err error)
 	DrainWorker(ctx context.Context, workerID string) (drained bool, err error)
 	// KillInstance terminates an instance and removes it from the scaling group.
-	// Implementations MUST ensure that the group's desired capacity is decremented
-	// as part of this operation (either explicitly or via platform auto-adjustment).
-	// The caller does NOT separately adjust capacity during scale-down.
-	KillInstance(ctx context.Context, instanceID string) (err error)
+	// decrementCapacity controls whether the group's desired capacity is reduced by one.
+	// Pass true when scaling down intentionally; pass false when removing a stray instance
+	// so that the group maintains its desired capacity and replaces it automatically.
+	// GCP and Azure implementations ignore this parameter — their platforms adjust
+	// capacity automatically regardless.
+	KillInstance(ctx context.Context, instanceID string, decrementCapacity bool) (err error)
 	ScaleUpASG(ctx context.Context, desiredCapacity int) (err error)
 	InstanceIdentity(worker *Worker) (groupID GroupID, instanceID InstanceID, err error)
 	Close() error // Release resources when done
@@ -140,7 +142,7 @@ func (s AutoScaler) Scale(ctx context.Context, cfg RuntimeConfig) error {
 			if instanceAge > 10*time.Minute {
 				logger.Warn("instance has no corresponding worker in Spacelift, removing from the ASG")
 
-				if err := s.controller.KillInstance(ctx, instance.ID); err != nil {
+				if err := s.controller.KillInstance(ctx, instance.ID, false); err != nil {
 					logger.Error("could not kill stray instance", "error", err)
 					error_count++
 					continue
@@ -214,7 +216,7 @@ func (s AutoScaler) Scale(ctx context.Context, cfg RuntimeConfig) error {
 			continue
 		}
 
-		if err := s.controller.KillInstance(ctx, string(instanceID)); err != nil {
+		if err := s.controller.KillInstance(ctx, string(instanceID), true); err != nil {
 			logger.Error("could not kill instance", "error", err)
 			error_count++
 			continue
