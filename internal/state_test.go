@@ -812,6 +812,282 @@ func TestDecide_WaitingForIdleWorkers_NoScaling(t *testing.T) {
 	require.ElementsMatch(t, []string{"autoscaling group exactly at the right size"}, decision.Comments)
 }
 
+// Target Utilization Tests
+//
+// Formula: demand = busy + pending
+//          desiredTotal = ceil(demand * 100 / targetUtilization)
+//          difference = desiredTotal - validWorkerCount
+
+func TestDecide_TargetUtilization90Percent_ProactiveScaleUp(t *testing.T) {
+	// 8 busy + 2 pending = 10 demand
+	// At 90%: desiredTotal = ceil(10 / 0.9) = 12
+	// difference = 12 - 10 = +2 → scale up by 2
+	const asgName = "asg-name"
+	asg := &internal.AutoScalingGroup{
+		Name:            asgName,
+		MinSize:         0,
+		MaxSize:         20,
+		DesiredCapacity: 10,
+	}
+	workerPool := &internal.WorkerPool{
+		PendingRuns: 2,
+		Workers: []internal.Worker{
+			testWorker(asgName, "i-1", busy),
+			testWorker(asgName, "i-2", busy),
+			testWorker(asgName, "i-3", busy),
+			testWorker(asgName, "i-4", busy),
+			testWorker(asgName, "i-5", busy),
+			testWorker(asgName, "i-6", busy),
+			testWorker(asgName, "i-7", busy),
+			testWorker(asgName, "i-8", busy),
+			testWorker(asgName, "i-9"),
+			testWorker(asgName, "i-10"),
+		},
+	}
+	cfg := internal.RuntimeConfig{
+		AutoscalingTargetUtilizationPercent: 90,
+	}
+
+	state, err := internal.NewState(workerPool, asg, cfg, testLogger(), testIdentifier)
+	require.NoError(t, err)
+
+	decision := state.Decide(10, 10)
+
+	require.Equal(t, internal.ScalingDirectionUp, decision.ScalingDirection)
+	require.Equal(t, 2, decision.ScalingSize)
+}
+
+func TestDecide_TargetUtilization90Percent_AtEquilibrium(t *testing.T) {
+	// 9 busy + 0 pending = 9 demand
+	// At 90%: desiredTotal = ceil(9 / 0.9) = 10
+	// difference = 10 - 10 = 0 → no scaling
+	const asgName = "asg-name"
+	asg := &internal.AutoScalingGroup{
+		Name:            asgName,
+		MinSize:         0,
+		MaxSize:         20,
+		DesiredCapacity: 10,
+	}
+	workerPool := &internal.WorkerPool{
+		PendingRuns: 0,
+		Workers: []internal.Worker{
+			testWorker(asgName, "i-1", busy),
+			testWorker(asgName, "i-2", busy),
+			testWorker(asgName, "i-3", busy),
+			testWorker(asgName, "i-4", busy),
+			testWorker(asgName, "i-5", busy),
+			testWorker(asgName, "i-6", busy),
+			testWorker(asgName, "i-7", busy),
+			testWorker(asgName, "i-8", busy),
+			testWorker(asgName, "i-9", busy),
+			testWorker(asgName, "i-10"),
+		},
+	}
+	cfg := internal.RuntimeConfig{
+		AutoscalingTargetUtilizationPercent: 90,
+	}
+
+	state, err := internal.NewState(workerPool, asg, cfg, testLogger(), testIdentifier)
+	require.NoError(t, err)
+
+	decision := state.Decide(10, 10)
+
+	require.Equal(t, internal.ScalingDirectionNone, decision.ScalingDirection)
+}
+
+func TestDecide_TargetUtilization90Percent_ScaleDown(t *testing.T) {
+	// 8 busy + 0 pending = 8 demand
+	// At 90%: desiredTotal = ceil(8 / 0.9) = 9
+	// difference = 9 - 10 = -1 → scale down by 1
+	const asgName = "asg-name"
+	asg := &internal.AutoScalingGroup{
+		Name:            asgName,
+		MinSize:         0,
+		MaxSize:         20,
+		DesiredCapacity: 10,
+	}
+	workerPool := &internal.WorkerPool{
+		PendingRuns: 0,
+		Workers: []internal.Worker{
+			testWorker(asgName, "i-1", busy),
+			testWorker(asgName, "i-2", busy),
+			testWorker(asgName, "i-3", busy),
+			testWorker(asgName, "i-4", busy),
+			testWorker(asgName, "i-5", busy),
+			testWorker(asgName, "i-6", busy),
+			testWorker(asgName, "i-7", busy),
+			testWorker(asgName, "i-8", busy),
+			testWorker(asgName, "i-9"),
+			testWorker(asgName, "i-10"),
+		},
+	}
+	cfg := internal.RuntimeConfig{
+		AutoscalingTargetUtilizationPercent: 90,
+	}
+
+	state, err := internal.NewState(workerPool, asg, cfg, testLogger(), testIdentifier)
+	require.NoError(t, err)
+
+	decision := state.Decide(10, 10)
+
+	require.Equal(t, internal.ScalingDirectionDown, decision.ScalingDirection)
+	require.Equal(t, 1, decision.ScalingSize)
+}
+
+func TestDecide_TargetUtilization100Percent_BackwardCompatible(t *testing.T) {
+	// 5 busy + 0 pending = 5 demand
+	// At 100%: desiredTotal = ceil(5 / 1.0) = 5
+	// difference = 5 - 5 = 0 → no scaling
+	const asgName = "asg-name"
+	asg := &internal.AutoScalingGroup{
+		Name:            asgName,
+		MinSize:         0,
+		MaxSize:         10,
+		DesiredCapacity: 5,
+	}
+	workerPool := &internal.WorkerPool{
+		PendingRuns: 0,
+		Workers: []internal.Worker{
+			testWorker(asgName, "i-1", busy),
+			testWorker(asgName, "i-2", busy),
+			testWorker(asgName, "i-3", busy),
+			testWorker(asgName, "i-4", busy),
+			testWorker(asgName, "i-5", busy),
+		},
+	}
+	cfg := internal.RuntimeConfig{
+		AutoscalingTargetUtilizationPercent: 100,
+	}
+
+	state, err := internal.NewState(workerPool, asg, cfg, testLogger(), testIdentifier)
+	require.NoError(t, err)
+
+	decision := state.Decide(5, 5)
+
+	require.Equal(t, internal.ScalingDirectionNone, decision.ScalingDirection)
+}
+
+func TestDecide_TargetUtilization90Percent_FullSaturationScalesUp(t *testing.T) {
+	// 10 busy + 2 pending = 12 demand (pool fully saturated with pending work)
+	// At 90%: desiredTotal = ceil(12 / 0.9) = 14
+	// difference = 14 - 10 = +4 → scale up by 4
+	const asgName = "asg-name"
+	asg := &internal.AutoScalingGroup{
+		Name:            asgName,
+		MinSize:         0,
+		MaxSize:         20,
+		DesiredCapacity: 10,
+	}
+	workerPool := &internal.WorkerPool{
+		PendingRuns: 2,
+		Workers: []internal.Worker{
+			testWorker(asgName, "i-1", busy),
+			testWorker(asgName, "i-2", busy),
+			testWorker(asgName, "i-3", busy),
+			testWorker(asgName, "i-4", busy),
+			testWorker(asgName, "i-5", busy),
+			testWorker(asgName, "i-6", busy),
+			testWorker(asgName, "i-7", busy),
+			testWorker(asgName, "i-8", busy),
+			testWorker(asgName, "i-9", busy),
+			testWorker(asgName, "i-10", busy),
+		},
+	}
+	cfg := internal.RuntimeConfig{
+		AutoscalingTargetUtilizationPercent: 90,
+	}
+
+	state, err := internal.NewState(workerPool, asg, cfg, testLogger(), testIdentifier)
+	require.NoError(t, err)
+
+	decision := state.Decide(10, 10)
+
+	require.Equal(t, internal.ScalingDirectionUp, decision.ScalingDirection)
+	require.Equal(t, 4, decision.ScalingSize)
+}
+
+func TestDecide_TargetUtilization_ZeroDemand_ScalesToZero(t *testing.T) {
+	// 0 busy + 0 pending = 0 demand
+	// At 90%: desiredTotal = ceil(0 / 0.9) = 0
+	// difference = 0 - 2 = -2 → scale down by 2
+	const asgName = "asg-name"
+	asg := &internal.AutoScalingGroup{
+		Name:            asgName,
+		MinSize:         0,
+		MaxSize:         20,
+		DesiredCapacity: 2,
+	}
+	workerPool := &internal.WorkerPool{
+		PendingRuns: 0,
+		Workers: []internal.Worker{
+			testWorker(asgName, "i-1"),
+			testWorker(asgName, "i-2"),
+		},
+	}
+	cfg := internal.RuntimeConfig{
+		AutoscalingTargetUtilizationPercent: 90,
+	}
+
+	state, err := internal.NewState(workerPool, asg, cfg, testLogger(), testIdentifier)
+	require.NoError(t, err)
+
+	decision := state.Decide(10, 10)
+
+	require.Equal(t, internal.ScalingDirectionDown, decision.ScalingDirection)
+	require.Equal(t, 2, decision.ScalingSize)
+}
+
+func TestDecide_TargetUtilization_WithScaleDownDelay_CapsToScalableWorkers(t *testing.T) {
+	// 5 busy + 0 pending = 5 demand
+	// At 100%: desiredTotal = ceil(5 / 1.0) = 5
+	// difference = 5 - 10 = -5 → wants to scale down 5
+	// BUT only 2 workers are scalable (past delay)
+	// Should only scale down 2, not 5
+	const asgName = "asg-name"
+	asg := &internal.AutoScalingGroup{
+		Name:            asgName,
+		MinSize:         0,
+		MaxSize:         20,
+		DesiredCapacity: 10,
+	}
+
+	now := time.Now()
+	recentlyIdle := int32(now.Add(-2 * time.Minute).Unix()) // 2 min ago - NOT past 5 min delay
+	longIdle := int32(now.Add(-10 * time.Minute).Unix())    // 10 min ago - past 5 min delay
+
+	workerPool := &internal.WorkerPool{
+		PendingRuns: 0,
+		Workers: []internal.Worker{
+			// 5 busy workers
+			testWorker(asgName, "i-1", busy),
+			testWorker(asgName, "i-2", busy),
+			testWorker(asgName, "i-3", busy),
+			testWorker(asgName, "i-4", busy),
+			testWorker(asgName, "i-5", busy),
+			// 3 idle workers NOT past delay (recently became idle)
+			testWorker(asgName, "i-6", availableAt(recentlyIdle)),
+			testWorker(asgName, "i-7", availableAt(recentlyIdle)),
+			testWorker(asgName, "i-8", availableAt(recentlyIdle)),
+			// 2 idle workers PAST delay (scalable)
+			testWorker(asgName, "i-9", availableAt(longIdle)),
+			testWorker(asgName, "i-10", availableAt(longIdle)),
+		},
+	}
+	cfg := internal.RuntimeConfig{
+		AutoscalingTargetUtilizationPercent: 100,
+		AutoscalingScaleDownDelay:           5, // 5 minute delay
+	}
+
+	state, err := internal.NewState(workerPool, asg, cfg, testLogger(), testIdentifier)
+	require.NoError(t, err)
+
+	decision := state.Decide(10, 10)
+
+	// Should scale down only 2 (the scalable ones), not 5
+	require.Equal(t, internal.ScalingDirectionDown, decision.ScalingDirection)
+	require.Equal(t, 2, decision.ScalingSize)
+}
+
 func TestScalableWorkers_WithAvailableAt_UsesAvailableAtForIdleTime(t *testing.T) {
 	asg := &internal.AutoScalingGroup{
 		Name:            "asg-name",
@@ -942,4 +1218,23 @@ func mustJSON(T any) string {
 		panic(err)
 	}
 	return string(out)
+}
+
+// testWorker creates a Worker with the given ASG name and instance ID.
+// Use option functions to set additional fields.
+func testWorker(asgName, instanceID string, opts ...func(*internal.Worker)) internal.Worker {
+	w := internal.Worker{
+		Metadata: mustJSON(map[string]any{"asg_id": asgName, "instance_id": instanceID}),
+	}
+	for _, opt := range opts {
+		opt(&w)
+	}
+	return w
+}
+
+func busy(w *internal.Worker)    { w.Busy = true }
+func drained(w *internal.Worker) { w.Drained = true }
+
+func availableAt(t int32) func(*internal.Worker) {
+	return func(w *internal.Worker) { w.AvailableAt = &t }
 }
