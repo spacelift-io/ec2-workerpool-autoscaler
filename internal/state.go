@@ -98,6 +98,18 @@ func (s *State) ValidWorkerCount() int {
 	return s.validWorkerCount
 }
 
+// BusyWorkerCount returns the number of valid workers that are currently busy.
+// Only workers with valid metadata (in workersByInstanceID) are counted.
+func (s *State) BusyWorkerCount() int {
+	busy := 0
+	for _, w := range s.workersByInstanceID {
+		if w.Busy {
+			busy++
+		}
+	}
+	return busy
+}
+
 // ScalableWorkers returns a list of workers that are not currently busy.
 func (s *State) ScalableWorkers() []Worker {
 	var out []Worker
@@ -174,19 +186,18 @@ func (s *State) Decide(maxCreate, maxKill int) Decision {
 		}
 	}
 
-	scalable := s.ScalableWorkers()
+	// Calculate demand: busy workers + pending runs
+	demand := s.BusyWorkerCount() + int(s.WorkerPool.PendingRuns)
 
-	// Apply target utilization to create headroom. At 90% target, 10 workers
-	// count as 9 effective capacity, prompting scale-up sooner. The result is
-	// floored to favor maintaining headroom: 5 workers at 90% yields 4
-	// effective capacity, not 5.
+	// Apply target utilization to create headroom. At 90% target, 10 demand
+	// requires ceil(10/0.9) = 12 workers to maintain 10% spare capacity.
 	targetUtilization := s.cfg.AutoscalingTargetUtilizationPercent
 	if targetUtilization <= 0 || targetUtilization > 100 {
 		targetUtilization = 100
 	}
-	effectiveScalable := int(math.Floor(float64(len(scalable)) * float64(targetUtilization) / 100.0))
+	desiredTotal := int(math.Ceil(float64(demand) * 100.0 / float64(targetUtilization)))
 
-	difference := int(s.WorkerPool.PendingRuns) - effectiveScalable
+	difference := desiredTotal - s.validWorkerCount
 
 	// Enforce minimum size: if we're below the floor, ensure we scale up
 	// to at least MinSize. AWS ASGs enforce this natively; GCP and Azure
@@ -200,7 +211,20 @@ func (s *State) Decide(maxCreate, maxKill int) Decision {
 	}
 
 	if difference < 0 {
-		return s.determineScaleDown(-difference, maxKill)
+		// Can only scale down workers that are scalable (idle + past scale-down delay)
+		scalable := s.ScalableWorkers()
+		if len(scalable) == 0 {
+			return Decision{
+				ScalingDirection: ScalingDirectionNone,
+				Comments:         []string{"autoscaling group exactly at the right size"},
+			}
+		}
+		// Cap scale-down to the number of actually scalable workers
+		toScaleDown := -difference
+		if toScaleDown > len(scalable) {
+			toScaleDown = len(scalable)
+		}
+		return s.determineScaleDown(toScaleDown, maxKill)
 	}
 
 	return Decision{

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"math"
 	"time"
 )
 
@@ -74,8 +75,14 @@ func (s AutoScaler) Scale(ctx context.Context, cfg RuntimeConfig) error {
 
 	// Sanity check: Detect if ASG desired capacity is unreasonably high.
 	// This can happen during AWS service disruptions when AWS sets incorrect capacity.
-	// Calculate what we'd expect: valid workers + pending runs + generous buffer for scaling headroom
-	expectedMaxCapacity := state.ValidWorkerCount() + int(workerPool.PendingRuns) + cfg.AutoscalingMaxCreate
+	// Calculate what we'd expect: demand adjusted for target utilization + buffer for scaling headroom
+	demand := state.ValidWorkerCount() + int(workerPool.PendingRuns)
+	targetUtilization := cfg.AutoscalingTargetUtilizationPercent
+	if targetUtilization <= 0 || targetUtilization > 100 {
+		targetUtilization = 100
+	}
+	expectedWithHeadroom := int(math.Ceil(float64(demand) * 100.0 / float64(targetUtilization)))
+	expectedMaxCapacity := expectedWithHeadroom + cfg.AutoscalingMaxCreate
 
 	// Only trigger if capacity is SIGNIFICANTLY higher than expected
 	// to avoid false positives during normal scaling operations
@@ -93,8 +100,8 @@ func (s AutoScaler) Scale(ctx context.Context, cfg RuntimeConfig) error {
 			"difference", asg.DesiredCapacity-expectedMaxCapacity,
 		)
 
-		// Reset to a sane value: valid workers + pending runs (capped by max size)
-		saneCapacity := state.ValidWorkerCount() + int(workerPool.PendingRuns)
+		// Reset to a sane value: demand adjusted for target utilization (capped by max size)
+		saneCapacity := expectedWithHeadroom
 		if saneCapacity < asg.MinSize {
 			saneCapacity = asg.MinSize
 		}
