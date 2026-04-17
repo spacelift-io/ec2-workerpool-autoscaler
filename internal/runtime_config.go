@@ -19,11 +19,12 @@ type RuntimeConfig struct {
 	SpaceliftWorkerPoolID  string `env:"SPACELIFT_WORKER_POOL_ID,notEmpty"`
 
 	// Shared autoscaling fields (used by both platforms)
-	AutoscalingScaleDownDelay           int `env:"AUTOSCALING_SCALE_DOWN_DELAY" envDefault:"0"`
-	AutoscalingMaxKill                  int `env:"AUTOSCALING_MAX_KILL" envDefault:"1"`
-	AutoscalingMaxCreate                int `env:"AUTOSCALING_MAX_CREATE" envDefault:"1"`
-	AutoscalingCapacitySanityCheck      int `env:"AUTOSCALING_CAPACITY_SANITY_CHECK" envDefault:"10"`
-	AutoscalingTargetUtilizationPercent int `env:"AUTOSCALING_TARGET_UTILIZATION_PERCENT" envDefault:"100"`
+	AutoscalingScaleDownDelay           int  `env:"AUTOSCALING_SCALE_DOWN_DELAY" envDefault:"0"`
+	AutoscalingMaxKill                  int  `env:"AUTOSCALING_MAX_KILL" envDefault:"1"`
+	AutoscalingMaxCreate                int  `env:"AUTOSCALING_MAX_CREATE" envDefault:"1"`
+	AutoscalingCapacitySanityCheck      int  `env:"AUTOSCALING_CAPACITY_SANITY_CHECK" envDefault:"10"`
+	AutoscalingTargetUtilizationPercent int  `env:"AUTOSCALING_TARGET_UTILIZATION_PERCENT" envDefault:"100"`
+	AutoscalingUseAvailableAt           bool `env:"AUTOSCALING_USE_AVAILABLE_AT" envDefault:"false"`
 
 	// AWS-specific fields - use awsEnv tag
 	AutoscalingGroupARN string `awsEnv:"AUTOSCALING_GROUP_ARN,notEmpty"`

@@ -85,6 +85,7 @@ func setupAzureController() (*internal.AzureController, *MockAzureCompute, *Mock
 		Controller: internal.Controller{
 			Spacelift:             mockSpacelift,
 			SpaceliftWorkerPoolID: workerPoolID,
+			UseAvailableAt:        true,
 			Tracer:                tp.Tracer("unittest"),
 		},
 		Compute:                mockCompute,

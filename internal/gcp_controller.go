@@ -146,6 +146,7 @@ func NewGCPController(ctx context.Context, cfg *RuntimeConfig) (ControllerInterf
 	ctrl.Controller = Controller{
 		Spacelift:             spaceliftClient,
 		SpaceliftWorkerPoolID: cfg.SpaceliftWorkerPoolID,
+		UseAvailableAt:        cfg.AutoscalingUseAvailableAt,
 		Tracer:                otel.Tracer("github.com/spacelift-io/awsautoscalr/internal/controller"),
 	}
 

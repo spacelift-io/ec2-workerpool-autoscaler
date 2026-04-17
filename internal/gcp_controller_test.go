@@ -56,6 +56,7 @@ func setupGCPController(t *testing.T, isRegional bool) (*internal.GCPController,
 		Controller: internal.Controller{
 			Spacelift:             mockSpacelift,
 			SpaceliftWorkerPoolID: gcpWorkerPoolID,
+			UseAvailableAt:        true,
 			Tracer:                tp.Tracer("unittest"),
 		},
 		Compute:    mockCompute,
