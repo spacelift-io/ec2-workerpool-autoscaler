@@ -37,9 +37,10 @@ func setupController() (*internal.AWSController, *ifaces.MockAutoscaling, *iface
 
 	controller := &internal.AWSController{
 		Controller: internal.Controller{
-			Spacelift:             mockSpacelift,
-			SpaceliftWorkerPoolID: workerPoolID,
-			Tracer:                tp.Tracer("unittest"),
+			Spacelift:                 mockSpacelift,
+			SpaceliftWorkerPoolID:     workerPoolID,
+			ScaleDownDelayUseIdleTime: true,
+			Tracer:                    tp.Tracer("unittest"),
 		},
 		Autoscaling:             mockAutoscaling,
 		EC2:                     mockEC2,
@@ -310,6 +311,33 @@ func TestGetWorkerPool_WorkerPoolFound_ReturnsSortedAndFilteredWorkers(t *testin
 	require.Len(t, workerPool.Workers, 2)
 	require.Equal(t, "older", workerPool.Workers[0].ID)
 	require.Equal(t, "newer", workerPool.Workers[1].ID)
+}
+
+func TestGetWorkerPool_LegacyMode_UsesWorkerPoolDetailsLegacy(t *testing.T) {
+	sut, _, _, mockSpacelift := setupController()
+	sut.ScaleDownDelayUseIdleTime = false
+
+	mockSpacelift.On("Query", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Run(func(args mock.Arguments) {
+			details := args.Get(1).(*internal.WorkerPoolDetailsLegacy)
+			details.Pool = &internal.WorkerPoolLegacy{
+				PendingRuns: 5,
+				Workers: []internal.WorkerLegacy{
+					{ID: "worker1", CreatedAt: 100, Busy: true, Drained: false},
+					{ID: "worker2", CreatedAt: 200, Busy: false, Drained: false},
+				},
+			}
+		}).Return(nil)
+
+	workerPool, err := sut.GetWorkerPool(t.Context())
+
+	require.NoError(t, err)
+	require.NotNil(t, workerPool)
+	require.Equal(t, int32(5), workerPool.PendingRuns)
+	require.Len(t, workerPool.Workers, 2)
+	require.Equal(t, "worker1", workerPool.Workers[0].ID)
+	require.Nil(t, workerPool.Workers[0].AvailableAt, "AvailableAt should be nil in legacy mode")
+	require.Nil(t, workerPool.Workers[1].AvailableAt, "AvailableAt should be nil in legacy mode")
 }
 
 // DrainWorker tests

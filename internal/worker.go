@@ -17,6 +17,16 @@ type Worker struct {
 	Metadata    string `graphql:"metadata" json:"metadata"`
 }
 
+// WorkerLegacy is used when querying backends that don't support availableAt.
+// This allows the autoscaler to work with older Spacelift versions.
+type WorkerLegacy struct {
+	ID        string `graphql:"id" json:"id"`
+	Busy      bool   `graphql:"busy" json:"busy"`
+	CreatedAt int32  `graphql:"createdAt" json:"createdAt"`
+	Drained   bool   `graphql:"drained" json:"drained"`
+	Metadata  string `graphql:"metadata" json:"metadata"`
+}
+
 func (w *Worker) metadata() (map[string]string, error) {
 	out := make(map[string]string)
 

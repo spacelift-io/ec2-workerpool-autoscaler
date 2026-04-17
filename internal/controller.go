@@ -26,7 +26,8 @@ type Controller struct {
 	Spacelift ifaces.Spacelift
 
 	// Configuration.
-	SpaceliftWorkerPoolID string
+	SpaceliftWorkerPoolID     string
+	ScaleDownDelayUseIdleTime bool
 
 	// Telemetry.
 	Tracer trace.Tracer
@@ -56,39 +57,87 @@ func (c *Controller) GetWorkerPool(ctx context.Context) (out *WorkerPool, err er
 	ctx, span := c.Tracer.Start(ctx, "spacelift.workerpool.get")
 	defer span.End()
 
+	if c.ScaleDownDelayUseIdleTime {
+		out, err = c.getWorkerPoolWithAvailableAt(ctx)
+	} else {
+		out, err = c.getWorkerPoolLegacy(ctx)
+	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	span.SetAttributes(
+		attribute.Int("workers", len(out.Workers)),
+		attribute.Int("pending_runs", int(out.PendingRuns)),
+	)
+
+	return out, nil
+}
+
+// getWorkerPoolWithAvailableAt queries the worker pool including the availableAt field.
+func (c *Controller) getWorkerPoolWithAvailableAt(ctx context.Context) (*WorkerPool, error) {
 	var wpDetails WorkerPoolDetails
 
-	if err = c.Spacelift.Query(ctx, &wpDetails, map[string]any{"workerPool": c.SpaceliftWorkerPoolID}); err != nil {
-		err = fmt.Errorf("could not get Spacelift worker pool details: %w", err)
-		return nil, err
+	if err := c.Spacelift.Query(ctx, &wpDetails, map[string]any{"workerPool": c.SpaceliftWorkerPoolID}); err != nil {
+		return nil, fmt.Errorf("could not get Spacelift worker pool details: %w", err)
 	}
 
 	if wpDetails.Pool == nil {
-		err = errors.New("worker pool not found or not accessible")
-		return nil, err
+		return nil, errors.New("worker pool not found or not accessible")
 	}
 
-	worker_index := 0
-	for _, worker := range wpDetails.Pool.Workers {
+	c.filterAndSortWorkers(wpDetails.Pool)
+	return wpDetails.Pool, nil
+}
+
+// getWorkerPoolLegacy queries the worker pool without the availableAt field,
+// for compatibility with older Spacelift backends.
+func (c *Controller) getWorkerPoolLegacy(ctx context.Context) (*WorkerPool, error) {
+	var wpDetails WorkerPoolDetailsLegacy
+
+	if err := c.Spacelift.Query(ctx, &wpDetails, map[string]any{"workerPool": c.SpaceliftWorkerPoolID}); err != nil {
+		return nil, fmt.Errorf("could not get Spacelift worker pool details: %w", err)
+	}
+
+	if wpDetails.Pool == nil {
+		return nil, errors.New("worker pool not found or not accessible")
+	}
+
+	// Convert legacy workers to Worker with nil AvailableAt
+	pool := &WorkerPool{
+		PendingRuns: wpDetails.Pool.PendingRuns,
+		Workers:     make([]Worker, 0, len(wpDetails.Pool.Workers)),
+	}
+	for _, w := range wpDetails.Pool.Workers {
+		pool.Workers = append(pool.Workers, Worker{
+			ID:          w.ID,
+			Busy:        w.Busy,
+			CreatedAt:   w.CreatedAt,
+			AvailableAt: nil,
+			Drained:     w.Drained,
+			Metadata:    w.Metadata,
+		})
+	}
+
+	c.filterAndSortWorkers(pool)
+	return pool, nil
+}
+
+// filterAndSortWorkers removes drained workers and sorts by creation time.
+func (c *Controller) filterAndSortWorkers(pool *WorkerPool) {
+	idx := 0
+	for _, worker := range pool.Workers {
 		if !worker.Drained {
-			wpDetails.Pool.Workers[worker_index] = worker
-			worker_index++
+			pool.Workers[idx] = worker
+			idx++
 		}
 	}
-	wpDetails.Pool.Workers = wpDetails.Pool.Workers[:worker_index]
+	pool.Workers = pool.Workers[:idx]
 
-	sort.Slice(wpDetails.Pool.Workers, func(i, j int) bool {
-		return wpDetails.Pool.Workers[i].CreatedAt < wpDetails.Pool.Workers[j].CreatedAt
+	sort.Slice(pool.Workers, func(i, j int) bool {
+		return pool.Workers[i].CreatedAt < pool.Workers[j].CreatedAt
 	})
-
-	span.SetAttributes(
-		attribute.Int("workers", len(wpDetails.Pool.Workers)),
-		attribute.Int("pending_runs", int(wpDetails.Pool.PendingRuns)),
-	)
-
-	out = wpDetails.Pool
-
-	return out, nil
 }
 
 // Drain worker drains a worker in the Spacelift worker pool.

@@ -65,9 +65,10 @@ func NewAWSController(ctx context.Context, cfg *RuntimeConfig) (ControllerInterf
 
 	return &AWSController{
 		Controller: Controller{
-			Spacelift:             spaceliftClient,
-			SpaceliftWorkerPoolID: cfg.SpaceliftWorkerPoolID,
-			Tracer:                otel.Tracer("github.com/spacelift-io/awsautoscalr/internal/controller"),
+			Spacelift:                 spaceliftClient,
+			SpaceliftWorkerPoolID:     cfg.SpaceliftWorkerPoolID,
+			ScaleDownDelayUseIdleTime: cfg.AutoscalingScaleDownDelayUseIdleTime,
+			Tracer:                    otel.Tracer("github.com/spacelift-io/awsautoscalr/internal/controller"),
 		},
 		Autoscaling:             autoscaling.NewFromConfig(awsConfig),
 		EC2:                     ec2.NewFromConfig(awsConfig),
