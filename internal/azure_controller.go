@@ -263,10 +263,10 @@ func NewAzureController(ctx context.Context, cfg *RuntimeConfig) (ControllerInte
 
 	return &AzureController{
 		Controller: Controller{
-			Spacelift:             spaceliftClient,
-			SpaceliftWorkerPoolID: cfg.SpaceliftWorkerPoolID,
-			UseAvailableAt:        cfg.AutoscalingUseAvailableAt,
-			Tracer:                otel.Tracer("github.com/spacelift-io/awsautoscalr/internal/controller"),
+			Spacelift:                 spaceliftClient,
+			SpaceliftWorkerPoolID:     cfg.SpaceliftWorkerPoolID,
+			ScaleDownDelayUseIdleTime: cfg.AutoscalingScaleDownDelayUseIdleTime,
+			Tracer:                    otel.Tracer("github.com/spacelift-io/awsautoscalr/internal/controller"),
 		},
 		Compute:                computeClient,
 		KeyVault:               keyVaultClient,

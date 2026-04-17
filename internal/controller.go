@@ -26,8 +26,8 @@ type Controller struct {
 	Spacelift ifaces.Spacelift
 
 	// Configuration.
-	SpaceliftWorkerPoolID string
-	UseAvailableAt        bool
+	SpaceliftWorkerPoolID     string
+	ScaleDownDelayUseIdleTime bool
 
 	// Telemetry.
 	Tracer trace.Tracer
@@ -57,7 +57,7 @@ func (c *Controller) GetWorkerPool(ctx context.Context) (out *WorkerPool, err er
 	ctx, span := c.Tracer.Start(ctx, "spacelift.workerpool.get")
 	defer span.End()
 
-	if c.UseAvailableAt {
+	if c.ScaleDownDelayUseIdleTime {
 		out, err = c.getWorkerPoolWithAvailableAt(ctx)
 	} else {
 		out, err = c.getWorkerPoolLegacy(ctx)

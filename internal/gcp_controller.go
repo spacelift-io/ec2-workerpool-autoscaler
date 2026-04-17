@@ -144,10 +144,10 @@ func NewGCPController(ctx context.Context, cfg *RuntimeConfig) (ControllerInterf
 	}
 
 	ctrl.Controller = Controller{
-		Spacelift:             spaceliftClient,
-		SpaceliftWorkerPoolID: cfg.SpaceliftWorkerPoolID,
-		UseAvailableAt:        cfg.AutoscalingUseAvailableAt,
-		Tracer:                otel.Tracer("github.com/spacelift-io/awsautoscalr/internal/controller"),
+		Spacelift:                 spaceliftClient,
+		SpaceliftWorkerPoolID:     cfg.SpaceliftWorkerPoolID,
+		ScaleDownDelayUseIdleTime: cfg.AutoscalingScaleDownDelayUseIdleTime,
+		Tracer:                    otel.Tracer("github.com/spacelift-io/awsautoscalr/internal/controller"),
 	}
 
 	// Create Instances client (always zonal, regardless of IGM type)

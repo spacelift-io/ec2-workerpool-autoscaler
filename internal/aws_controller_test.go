@@ -37,10 +37,10 @@ func setupController() (*internal.AWSController, *ifaces.MockAutoscaling, *iface
 
 	controller := &internal.AWSController{
 		Controller: internal.Controller{
-			Spacelift:             mockSpacelift,
-			SpaceliftWorkerPoolID: workerPoolID,
-			UseAvailableAt:        true,
-			Tracer:                tp.Tracer("unittest"),
+			Spacelift:                 mockSpacelift,
+			SpaceliftWorkerPoolID:     workerPoolID,
+			ScaleDownDelayUseIdleTime: true,
+			Tracer:                    tp.Tracer("unittest"),
 		},
 		Autoscaling:             mockAutoscaling,
 		EC2:                     mockEC2,
@@ -315,7 +315,7 @@ func TestGetWorkerPool_WorkerPoolFound_ReturnsSortedAndFilteredWorkers(t *testin
 
 func TestGetWorkerPool_LegacyMode_UsesWorkerPoolDetailsLegacy(t *testing.T) {
 	sut, _, _, mockSpacelift := setupController()
-	sut.UseAvailableAt = false
+	sut.ScaleDownDelayUseIdleTime = false
 
 	mockSpacelift.On("Query", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
 		Run(func(args mock.Arguments) {
