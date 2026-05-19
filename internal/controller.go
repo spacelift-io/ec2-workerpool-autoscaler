@@ -2,6 +2,9 @@ package internal
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"net/http"
@@ -33,10 +36,30 @@ type Controller struct {
 	Tracer trace.Tracer
 }
 
-func newSpaceliftClient(ctx context.Context, endpoint, keyID, keySecret string) (ifaces.Spacelift, error) {
+func newSpaceliftClient(ctx context.Context, endpoint, keyID, keySecret, caBundle string) (ifaces.Spacelift, error) {
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+
+	if caBundle != "" {
+		pemBytes, err := base64.StdEncoding.DecodeString(caBundle)
+		if err != nil {
+			return nil, fmt.Errorf("could not decode SPACELIFT_CA_BUNDLE: %w", err)
+		}
+
+		certPool, err := x509.SystemCertPool()
+		if err != nil {
+			certPool = x509.NewCertPool()
+		}
+
+		if !certPool.AppendCertsFromPEM(pemBytes) {
+			return nil, errors.New("SPACELIFT_CA_BUNDLE contained no valid PEM certificates")
+		}
+
+		transport.TLSClientConfig = &tls.Config{RootCAs: certPool}
+	}
+
 	httpClient := &http.Client{
 		Transport: otelhttp.NewTransport(
-			http.DefaultTransport,
+			transport,
 			otelhttp.WithSpanNameFormatter(func(operation string, r *http.Request) string {
 				return r.Host
 			}),
@@ -44,7 +67,6 @@ func newSpaceliftClient(ctx context.Context, endpoint, keyID, keySecret string) 
 	}
 
 	slSession, err := session.FromAPIKey(ctx, httpClient)(endpoint, keyID, keySecret)
-
 	if err != nil {
 		return nil, fmt.Errorf("could not create Spacelift session: %w", err)
 	}

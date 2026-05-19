@@ -138,7 +138,7 @@ func NewGCPController(ctx context.Context, cfg *RuntimeConfig) (ControllerInterf
 		return nil, errors.Join(errors.New("could not find Spacelift API key secret value in Secret Manager"), ctrl.Close())
 	}
 
-	spaceliftClient, err := newSpaceliftClient(ctx, cfg.SpaceliftAPIEndpoint, cfg.SpaceliftAPIKeyID, string(secret.Payload.Data))
+	spaceliftClient, err := newSpaceliftClient(ctx, cfg.SpaceliftAPIEndpoint, cfg.SpaceliftAPIKeyID, string(secret.Payload.Data), cfg.SpaceliftCABundle)
 	if err != nil {
 		return nil, errors.Join(err, ctrl.Close())
 	}

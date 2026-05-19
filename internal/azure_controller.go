@@ -250,7 +250,7 @@ func NewAzureController(ctx context.Context, cfg *RuntimeConfig) (ControllerInte
 		return nil, errors.New("could not find Spacelift API key secret value in Key Vault")
 	}
 
-	spaceliftClient, err := newSpaceliftClient(ctx, cfg.SpaceliftAPIEndpoint, cfg.SpaceliftAPIKeyID, *secret.Value)
+	spaceliftClient, err := newSpaceliftClient(ctx, cfg.SpaceliftAPIEndpoint, cfg.SpaceliftAPIKeyID, *secret.Value, cfg.SpaceliftCABundle)
 	if err != nil {
 		return nil, err
 	}
