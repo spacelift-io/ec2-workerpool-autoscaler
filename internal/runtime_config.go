@@ -17,6 +17,7 @@ type RuntimeConfig struct {
 	SpaceliftAPISecretName string `env:"SPACELIFT_API_KEY_SECRET_NAME,notEmpty"`
 	SpaceliftAPIEndpoint   string `env:"SPACELIFT_API_KEY_ENDPOINT,notEmpty"`
 	SpaceliftWorkerPoolID  string `env:"SPACELIFT_WORKER_POOL_ID,notEmpty"`
+	SpaceliftCABundle      string `env:"SPACELIFT_CA_BUNDLE"`
 
 	// Shared autoscaling fields (used by both platforms)
 	AutoscalingScaleDownDelay            int  `env:"AUTOSCALING_SCALE_DOWN_DELAY" envDefault:"0"`

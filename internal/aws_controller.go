@@ -53,7 +53,7 @@ func NewAWSController(ctx context.Context, cfg *RuntimeConfig) (ControllerInterf
 		return nil, errors.New("could not find Spacelift API key secret value in SSM")
 	}
 
-	spaceliftClient, err := newSpaceliftClient(ctx, cfg.SpaceliftAPIEndpoint, cfg.SpaceliftAPIKeyID, *output.Parameter.Value)
+	spaceliftClient, err := newSpaceliftClient(ctx, cfg.SpaceliftAPIEndpoint, cfg.SpaceliftAPIKeyID, *output.Parameter.Value, cfg.SpaceliftCABundle)
 	if err != nil {
 		return nil, err
 	}
