@@ -21,7 +21,7 @@ jobs:
         uses: actions/setup-go@v6
         with: { go-version-file: go.mod }
         
-      - name: Create a draft release
+      - name: Build and publish release
         uses: goreleaser/goreleaser-action@v6
         with:
           args: release

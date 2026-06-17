@@ -48,3 +48,8 @@ archives:
 
 changelog:
   use: github-native
+
+release:
+  # Tags with a semver pre-release suffix (e.g. v2.7.0-rc.1) publish as GitHub
+  # pre-releases: assets are downloadable, but excluded from /releases/latest.
+  prerelease: auto
