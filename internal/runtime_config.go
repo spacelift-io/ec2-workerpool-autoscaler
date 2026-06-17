@@ -31,6 +31,11 @@ type RuntimeConfig struct {
 	AutoscalingGroupARN string `awsEnv:"AUTOSCALING_GROUP_ARN,notEmpty"`
 	AutoscalingRegion   string `awsEnv:"AUTOSCALING_REGION,notEmpty"`
 
+	// ARN of a Secrets Manager secret holding the base64-encoded CA bundle. Used
+	// instead of SPACELIFT_CA_BUNDLE when the bundle is too large for the 4KB
+	// Lambda environment variable limit.
+	SpaceliftCABundleSecretARN string `awsEnv:"SPACELIFT_CA_BUNDLE_SECRET_ARN"`
+
 	// Min/Max size fields (Azure, GCP, etc.) - use minMaxEnv tag
 	// AWS ASG has built-in min/max; other platforms need these from env vars
 	AutoscalingMinSize uint `minMaxEnv:"AUTOSCALING_MIN_SIZE" minMaxEnvDefault:"0"`

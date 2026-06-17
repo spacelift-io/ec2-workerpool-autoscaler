@@ -10,6 +10,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/autoscaling"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
+	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 	"github.com/aws/aws-sdk-go-v2/service/ssm"
 	"github.com/spacelift-io/awsautoscalr/internal/ifaces"
 	"go.opentelemetry.io/contrib/instrumentation/github.com/aws/aws-sdk-go-v2/otelaws"
@@ -53,7 +54,28 @@ func NewAWSController(ctx context.Context, cfg *RuntimeConfig) (ControllerInterf
 		return nil, errors.New("could not find Spacelift API key secret value in SSM")
 	}
 
-	spaceliftClient, err := newSpaceliftClient(ctx, cfg.SpaceliftAPIEndpoint, cfg.SpaceliftAPIKeyID, *output.Parameter.Value, cfg.SpaceliftCABundle)
+	// When the CA bundle is supplied via Secrets Manager (used for bundles too
+	// large to fit in a Lambda environment variable), fetch it and use it in
+	// place of SPACELIFT_CA_BUNDLE. The secret holds the same base64-encoded PEM.
+	caBundle := cfg.SpaceliftCABundle
+	if cfg.SpaceliftCABundleSecretARN != "" {
+		secretsClient := secretsmanager.NewFromConfig(awsConfig)
+
+		var secretOutput *secretsmanager.GetSecretValueOutput
+		secretOutput, err = secretsClient.GetSecretValue(ctx, &secretsmanager.GetSecretValueInput{
+			SecretId: aws.String(cfg.SpaceliftCABundleSecretARN),
+		})
+
+		if err != nil {
+			return nil, fmt.Errorf("could not get Spacelift CA bundle from Secrets Manager: %w", err)
+		} else if secretOutput.SecretString == nil {
+			return nil, errors.New("Spacelift CA bundle secret has no string value")
+		}
+
+		caBundle = *secretOutput.SecretString
+	}
+
+	spaceliftClient, err := newSpaceliftClient(ctx, cfg.SpaceliftAPIEndpoint, cfg.SpaceliftAPIKeyID, *output.Parameter.Value, caBundle)
 	if err != nil {
 		return nil, err
 	}
