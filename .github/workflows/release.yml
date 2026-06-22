@@ -1,9 +1,31 @@
 name: Release
 
-# Releases are triggered on tags that start with "v".
+# Releases are cut manually from the Actions tab. Pick a version and choose
+# whether it's a final release or a release candidate; the workflow creates the
+# annotated tag for you and hands it to goreleaser.
 on:
-  push:
-    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release, without the leading "v" (e.g. 2.7.0)'
+        required: true
+        type: string
+      release_type:
+        description: 'Release type'
+        required: true
+        default: release
+        type: choice
+        options:
+          - release
+          - release-candidate
+      rc_number:
+        description: 'Release candidate number (release-candidate only, e.g. 1 -> -rc.1)'
+        required: false
+        default: '1'
+        type: string
+
+permissions:
+  contents: write # push tags and publish the GitHub release
 
 jobs:
   release:
@@ -13,17 +35,56 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+        with:
+          fetch-depth: 0 # full history + tags so goreleaser can build the changelog
 
-      - name: Unshallow
-        run: git fetch --prune --unshallow
+      - name: Compute and validate tag
+        id: tag
+        run: |
+          version="${{ inputs.version }}"
+          version="${version#v}" # tolerate a leading "v" if someone adds it anyway
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::version '$version' must be semver X.Y.Z (no leading v)"
+            exit 1
+          fi
+
+          if [[ "${{ inputs.release_type }}" == "release-candidate" ]]; then
+            rc="${{ inputs.rc_number }}"
+            if [[ ! "$rc" =~ ^[0-9]+$ ]]; then
+              echo "::error::rc_number '$rc' must be a positive integer"
+              exit 1
+            fi
+            tag="v${version}-rc.${rc}"
+          else
+            tag="v${version}"
+          fi
+
+          if git rev-parse -q --verify "refs/tags/${tag}" >/dev/null; then
+            echo "::error::tag ${tag} already exists"
+            exit 1
+          fi
+
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+          echo "Releasing ${tag} from ${GITHUB_SHA}"
+
+      - name: Create annotated tag
+        run: |
+          git config user.name "${{ github.actor }}"
+          git config user.email "${{ github.actor }}@users.noreply.github.com"
+          git tag -a "${{ steps.tag.outputs.tag }}" -m "${{ steps.tag.outputs.tag }}"
+          git push origin "${{ steps.tag.outputs.tag }}"
 
       - name: Set up Go
         uses: actions/setup-go@v6
         with: { go-version-file: go.mod }
-        
+
       - name: Build and publish release
         uses: goreleaser/goreleaser-action@v6
         with:
           args: release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Pin goreleaser to the tag we just created. goreleaser otherwise infers
+          # the version via `git describe`, which prefers annotated tags and would
+          # pick the wrong one when a final tag and its RC share a commit.
+          GORELEASER_CURRENT_TAG: ${{ steps.tag.outputs.tag }}
