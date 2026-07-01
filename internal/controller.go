@@ -169,7 +169,7 @@ func (c *Controller) DrainWorker(ctx context.Context, workerID string) (drained 
 
 	span.SetAttributes(attribute.String("worker_id", workerID))
 
-	var worker *Worker
+	var worker *WorkerLegacy
 
 	if worker, err = c.workerDrainSet(ctx, workerID, true); err != nil {
 		err = fmt.Errorf("could not drain worker: %w", err)
@@ -195,7 +195,7 @@ func (c *Controller) DrainWorker(ctx context.Context, workerID string) (drained 
 	return false, nil
 }
 
-func (c *Controller) workerDrainSet(ctx context.Context, workerID string, drain bool) (worker *Worker, err error) {
+func (c *Controller) workerDrainSet(ctx context.Context, workerID string, drain bool) (worker *WorkerLegacy, err error) {
 	ctx, span := c.Tracer.Start(ctx, fmt.Sprintf("spacelift.worker.setdrain.%t", drain))
 	defer span.End()
 

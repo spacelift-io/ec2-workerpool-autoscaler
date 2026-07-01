@@ -17,8 +17,10 @@ type Worker struct {
 	Metadata    string `graphql:"metadata" json:"metadata"`
 }
 
-// WorkerLegacy is used when querying backends that don't support availableAt.
-// This allows the autoscaler to work with older Spacelift versions.
+// WorkerLegacy is the Worker shape without availableAt. It backs both the
+// legacy worker-pool query (for backends that predate availableAt) and the
+// drain mutation, which never needs availableAt and must keep working against
+// those older backends.
 type WorkerLegacy struct {
 	ID        string `graphql:"id" json:"id"`
 	Busy      bool   `graphql:"busy" json:"busy"`

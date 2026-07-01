@@ -419,7 +419,7 @@ func TestAzureDrainWorker_WorkerNotBusy_SucceedsAndReportsDrained(t *testing.T) 
 		}),
 		mock.Anything,
 	).Run(func(args mock.Arguments) {
-		args.Get(1).(*internal.WorkerDrainSet).Worker = internal.Worker{Busy: false}
+		args.Get(1).(*internal.WorkerDrainSet).Worker = internal.WorkerLegacy{Busy: false}
 	}).Return(nil)
 
 	drained, err := sut.DrainWorker(t.Context(), workerID)

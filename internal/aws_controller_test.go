@@ -407,7 +407,7 @@ func TestDrainWorker_WorkerNotBusy_SucceedsAndReportsDrained(t *testing.T) {
 		}),
 		mock.Anything,
 	).Run(func(args mock.Arguments) {
-		args.Get(1).(*internal.WorkerDrainSet).Worker = internal.Worker{Busy: false}
+		args.Get(1).(*internal.WorkerDrainSet).Worker = internal.WorkerLegacy{Busy: false}
 	}).Return(nil)
 
 	drained, err := sut.DrainWorker(t.Context(), workerID)
@@ -431,7 +431,7 @@ func TestDrainWorker_WorkerBusy_UndrainCallFails_SendsCorrectInput(t *testing.T)
 		}),
 		mock.Anything,
 	).Run(func(args mock.Arguments) {
-		args.Get(1).(*internal.WorkerDrainSet).Worker = internal.Worker{Busy: true}
+		args.Get(1).(*internal.WorkerDrainSet).Worker = internal.WorkerLegacy{Busy: true}
 	}).Return(nil)
 
 	var capturedUndrainParams map[string]any
@@ -472,7 +472,7 @@ func TestDrainWorker_WorkerBusy_UndrainCallFails_ReturnsError(t *testing.T) {
 		}),
 		mock.Anything,
 	).Run(func(args mock.Arguments) {
-		args.Get(1).(*internal.WorkerDrainSet).Worker = internal.Worker{Busy: true}
+		args.Get(1).(*internal.WorkerDrainSet).Worker = internal.WorkerLegacy{Busy: true}
 	}).Return(nil)
 
 	mockSpacelift.On(
@@ -507,7 +507,7 @@ func TestDrainWorker_WorkerBusy_UndrainCallSucceeds_ReportsNotDrained(t *testing
 		}),
 		mock.Anything,
 	).Run(func(args mock.Arguments) {
-		args.Get(1).(*internal.WorkerDrainSet).Worker = internal.Worker{Busy: true}
+		args.Get(1).(*internal.WorkerDrainSet).Worker = internal.WorkerLegacy{Busy: true}
 	}).Return(nil)
 
 	mockSpacelift.On(
