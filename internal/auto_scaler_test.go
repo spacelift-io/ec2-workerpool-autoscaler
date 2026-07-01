@@ -5,7 +5,6 @@ import (
 	"errors"
 	"log/slog"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -145,55 +144,6 @@ func TestAutoScalerScalingDown(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestAutoScalerDetachedNotTerminatedInstances(t *testing.T) {
-	var buf bytes.Buffer
-	h := slog.NewTextHandler(&buf, nil)
-
-	cfg := internal.RuntimeConfig{}
-
-	ctrl := new(MockController)
-	defer ctrl.AssertExpectations(t)
-
-	scaler := internal.NewAutoScaler(ctrl, slog.New(h))
-
-	setupInstanceIdentityMock(ctrl)
-
-	ctrl.On("GetWorkerPool", mock.Anything).Return(&internal.WorkerPool{
-		Workers: []internal.Worker{
-			{
-				ID:       "1",
-				Metadata: `{"asg_id": "group", "instance_id": "instance"}`,
-			},
-			{
-				ID:       "2",
-				Drained:  true,
-				Metadata: `{"asg_id": "group", "instance_id": "detached"}`,
-			},
-		},
-		PendingRuns: 2,
-	}, nil)
-	ctrl.On("GetAutoscalingGroup", mock.Anything).Return(&internal.AutoScalingGroup{
-		Name:            "group",
-		MinSize:         1,
-		MaxSize:         3,
-		DesiredCapacity: 2,
-		Instances: []internal.Instance{
-			{ID: "instance"},
-		},
-	}, nil)
-	ctrl.On("KillInstance", mock.Anything, "detached", false).Return(nil)
-	output := []internal.Instance{{
-		ID:         "detached",
-		LaunchTime: time.Now().Add(-time.Hour),
-	}}
-	ctrl.On(
-		"DescribeInstances",
-		mock.Anything,
-		[]string{"detached"},
-	).Return(output, nil)
-	err := scaler.Scale(t.Context(), cfg)
-	require.NoError(t, err)
-}
 func TestAutoScalerDesiredCapacitySanityCheck(t *testing.T) {
 	var buf bytes.Buffer
 	h := slog.NewTextHandler(&buf, nil)

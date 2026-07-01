@@ -52,43 +52,6 @@ func (_m *MockAutoscaling) DescribeAutoScalingGroups(_a0 context.Context, _a1 *a
 	return r0, r1
 }
 
-// DetachInstances provides a mock function with given fields: _a0, _a1, _a2
-func (_m *MockAutoscaling) DetachInstances(_a0 context.Context, _a1 *autoscaling.DetachInstancesInput, _a2 ...func(*autoscaling.Options)) (*autoscaling.DetachInstancesOutput, error) {
-	_va := make([]interface{}, len(_a2))
-	for _i := range _a2 {
-		_va[_i] = _a2[_i]
-	}
-	var _ca []interface{}
-	_ca = append(_ca, _a0, _a1)
-	_ca = append(_ca, _va...)
-	ret := _m.Called(_ca...)
-
-	if len(ret) == 0 {
-		panic("no return value specified for DetachInstances")
-	}
-
-	var r0 *autoscaling.DetachInstancesOutput
-	var r1 error
-	if rf, ok := ret.Get(0).(func(context.Context, *autoscaling.DetachInstancesInput, ...func(*autoscaling.Options)) (*autoscaling.DetachInstancesOutput, error)); ok {
-		return rf(_a0, _a1, _a2...)
-	}
-	if rf, ok := ret.Get(0).(func(context.Context, *autoscaling.DetachInstancesInput, ...func(*autoscaling.Options)) *autoscaling.DetachInstancesOutput); ok {
-		r0 = rf(_a0, _a1, _a2...)
-	} else {
-		if ret.Get(0) != nil {
-			r0 = ret.Get(0).(*autoscaling.DetachInstancesOutput)
-		}
-	}
-
-	if rf, ok := ret.Get(1).(func(context.Context, *autoscaling.DetachInstancesInput, ...func(*autoscaling.Options)) error); ok {
-		r1 = rf(_a0, _a1, _a2...)
-	} else {
-		r1 = ret.Error(1)
-	}
-
-	return r0, r1
-}
-
 // SetDesiredCapacity provides a mock function with given fields: _a0, _a1, _a2
 func (_m *MockAutoscaling) SetDesiredCapacity(_a0 context.Context, _a1 *autoscaling.SetDesiredCapacityInput, _a2 ...func(*autoscaling.Options)) (*autoscaling.SetDesiredCapacityOutput, error) {
 	_va := make([]interface{}, len(_a2))
@@ -118,6 +81,43 @@ func (_m *MockAutoscaling) SetDesiredCapacity(_a0 context.Context, _a1 *autoscal
 	}
 
 	if rf, ok := ret.Get(1).(func(context.Context, *autoscaling.SetDesiredCapacityInput, ...func(*autoscaling.Options)) error); ok {
+		r1 = rf(_a0, _a1, _a2...)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
+// TerminateInstanceInAutoScalingGroup provides a mock function with given fields: _a0, _a1, _a2
+func (_m *MockAutoscaling) TerminateInstanceInAutoScalingGroup(_a0 context.Context, _a1 *autoscaling.TerminateInstanceInAutoScalingGroupInput, _a2 ...func(*autoscaling.Options)) (*autoscaling.TerminateInstanceInAutoScalingGroupOutput, error) {
+	_va := make([]interface{}, len(_a2))
+	for _i := range _a2 {
+		_va[_i] = _a2[_i]
+	}
+	var _ca []interface{}
+	_ca = append(_ca, _a0, _a1)
+	_ca = append(_ca, _va...)
+	ret := _m.Called(_ca...)
+
+	if len(ret) == 0 {
+		panic("no return value specified for TerminateInstanceInAutoScalingGroup")
+	}
+
+	var r0 *autoscaling.TerminateInstanceInAutoScalingGroupOutput
+	var r1 error
+	if rf, ok := ret.Get(0).(func(context.Context, *autoscaling.TerminateInstanceInAutoScalingGroupInput, ...func(*autoscaling.Options)) (*autoscaling.TerminateInstanceInAutoScalingGroupOutput, error)); ok {
+		return rf(_a0, _a1, _a2...)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context, *autoscaling.TerminateInstanceInAutoScalingGroupInput, ...func(*autoscaling.Options)) *autoscaling.TerminateInstanceInAutoScalingGroupOutput); ok {
+		r0 = rf(_a0, _a1, _a2...)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*autoscaling.TerminateInstanceInAutoScalingGroupOutput)
+		}
+	}
+
+	if rf, ok := ret.Get(1).(func(context.Context, *autoscaling.TerminateInstanceInAutoScalingGroupInput, ...func(*autoscaling.Options)) error); ok {
 		r1 = rf(_a0, _a1, _a2...)
 	} else {
 		r1 = ret.Error(1)
