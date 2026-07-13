@@ -1,5 +1,14 @@
 # Spacelift worker pool autoscaler
 
+> [!IMPORTANT]
+> **You almost certainly don't need to deploy this utility yourself.** Spacelift maintains official Terraform modules that provision a complete worker pool for you:
+>
+> - **AWS**: [terraform-aws-spacelift-workerpool-on-ec2](https://github.com/spacelift-io/terraform-aws-spacelift-workerpool-on-ec2)
+> - **Azure**: [terraform-azure-spacelift-workerpool](https://github.com/spacelift-io/terraform-azure-spacelift-workerpool)
+> - **GCP**: [terraform-google-spacelift-workerpool](https://github.com/spacelift-io/terraform-google-spacelift-workerpool)
+>
+> Wrapping this binary in your own module means re-implementing automation the official modules already provide, and missing pieces of it can lead to the autoscaler killing workers that are still processing runs.
+
 This utility is designed to be executed periodically for a single combination of a Spacelift worker pool and a cloud provider's autoscaling group which provides the worker pool with workers.
 
 ## Supported Cloud Providers
