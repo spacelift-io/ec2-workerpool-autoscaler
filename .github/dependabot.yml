@@ -8,3 +8,32 @@ updates:
       github-actions:
         patterns:
           - "*"
+
+  # Go modules ship inside the released Lambda artifact, so a stale dependency
+  # here becomes a CVE in every worker pool running it. Grouped by SDK family so
+  # one bad bump cannot hold the rest hostage.
+  - package-ecosystem: "gomod"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+    groups:
+      aws-sdk:
+        patterns:
+          - "github.com/aws/*"
+          - "github.com/aws-observability/*"
+      azure-sdk:
+        patterns:
+          - "github.com/Azure/*"
+          - "github.com/AzureAD/*"
+      google-cloud:
+        patterns:
+          - "cloud.google.com/*"
+          - "google.golang.org/*"
+          - "github.com/googleapis/*"
+      opentelemetry:
+        patterns:
+          - "go.opentelemetry.io/*"
+      golang-x:
+        patterns:
+          - "golang.org/x/*"
