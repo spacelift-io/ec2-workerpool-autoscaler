@@ -28,47 +28,6 @@ func (awsInstanceIdentifier) InstanceIdentity(worker *internal.Worker) (internal
 
 var testIdentifier = awsInstanceIdentifier{}
 
-func TestState_StrayInstances(t *testing.T) {
-	const asgName = "asg-name"
-	const instanceID = "instance-id"
-	const failedToTerminateInstanceID = "instance-id2"
-	cfg := internal.RuntimeConfig{}
-	asg := &internal.AutoScalingGroup{
-		Name:            asgName,
-		MinSize:         1,
-		MaxSize:         5,
-		DesiredCapacity: 3,
-		Instances: []internal.Instance{
-			{
-				ID: instanceID,
-			},
-		},
-	}
-	workerPool := &internal.WorkerPool{
-		Workers: []internal.Worker{
-			{
-				Metadata: mustJSON(map[string]any{
-					"asg_id":      asgName,
-					"instance_id": instanceID,
-				}),
-			},
-			{
-				Drained: true,
-				Metadata: mustJSON(map[string]any{
-					"asg_id":      asgName,
-					"instance_id": failedToTerminateInstanceID,
-				}),
-			},
-		},
-	}
-
-	state, err := internal.NewState(workerPool, asg, cfg, testLogger(), testIdentifier)
-	require.NoError(t, err)
-
-	strayInstances := state.StrayInstances()
-	require.ElementsMatch(t, []string{failedToTerminateInstanceID}, strayInstances)
-}
-
 func TestNewState_ASGNameNotSet_ReturnsError(t *testing.T) {
 	asg := &internal.AutoScalingGroup{
 		Name:            "",

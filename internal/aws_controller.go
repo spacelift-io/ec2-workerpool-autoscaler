@@ -202,23 +202,13 @@ func (c *AWSController) KillInstance(ctx context.Context, instanceID string, dec
 
 	span.SetAttributes(attribute.String("instance_id", instanceID))
 
-	_, err = c.Autoscaling.DetachInstances(ctx, &autoscaling.DetachInstancesInput{
-		AutoScalingGroupName:           aws.String(c.AWSAutoscalingGroupName),
-		InstanceIds:                    []string{instanceID},
+	_, err = c.Autoscaling.TerminateInstanceInAutoScalingGroup(ctx, &autoscaling.TerminateInstanceInAutoScalingGroupInput{
+		InstanceId:                     aws.String(instanceID),
 		ShouldDecrementDesiredCapacity: aws.Bool(decrementCapacity),
 	})
 
-	if err != nil && !strings.Contains(err.Error(), "is not part of Auto Scaling group") {
-		err = fmt.Errorf("could not detach instance from autoscaling group: %v", err)
-		return err
-	}
-
-	_, err = c.EC2.TerminateInstances(ctx, &ec2.TerminateInstancesInput{
-		InstanceIds: []string{instanceID},
-	})
-
 	if err != nil {
-		err = fmt.Errorf("could not terminate detached instance: %v", err)
+		err = fmt.Errorf("could not terminate instance in autoscaling group: %w", err)
 		return err
 	}
 

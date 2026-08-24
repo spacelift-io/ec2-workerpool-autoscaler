@@ -12,6 +12,6 @@ import (
 //go:generate mockery --inpackage --name Autoscaling --filename mock_autoscaling.go
 type Autoscaling interface {
 	DescribeAutoScalingGroups(context.Context, *autoscaling.DescribeAutoScalingGroupsInput, ...func(*autoscaling.Options)) (*autoscaling.DescribeAutoScalingGroupsOutput, error)
-	DetachInstances(context.Context, *autoscaling.DetachInstancesInput, ...func(*autoscaling.Options)) (*autoscaling.DetachInstancesOutput, error)
 	SetDesiredCapacity(context.Context, *autoscaling.SetDesiredCapacityInput, ...func(*autoscaling.Options)) (*autoscaling.SetDesiredCapacityOutput, error)
+	TerminateInstanceInAutoScalingGroup(context.Context, *autoscaling.TerminateInstanceInAutoScalingGroupInput, ...func(*autoscaling.Options)) (*autoscaling.TerminateInstanceInAutoScalingGroupOutput, error)
 }

@@ -153,28 +153,6 @@ func (s *State) StrayInstances() []string {
 		}
 	}
 
-	res = append(res, s.detachedNotTerminatedInstances()...)
-
-	return res
-}
-
-func (s *State) detachedNotTerminatedInstances() []string {
-	instanceIDs := make(map[InstanceID]struct{})
-	for _, instance := range s.ASG.Instances {
-		instanceIDs[InstanceID(instance.ID)] = struct{}{}
-	}
-
-	var res []string
-	for instanceID, worker := range s.workersByInstanceID {
-		if !worker.Drained {
-			continue
-		}
-		if _, ok := instanceIDs[instanceID]; ok {
-			continue
-		}
-
-		res = append(res, string(instanceID))
-	}
 	return res
 }
 
