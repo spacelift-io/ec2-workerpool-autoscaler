@@ -27,6 +27,14 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Parallel invocations each enforce AUTOSCALING_MAX_KILL alone, so together
+	// they over-terminate. Since aws-lambda-go v1.54, _X_AMZN_TRACE_ID is also
+	// only exported at concurrency 1, silently unparenting our spans above it.
+	if concurrency := lambdacontext.MaxConcurrency(); concurrency > 1 {
+		logger.Warn("AWS_LAMBDA_MAX_CONCURRENCY is greater than 1; concurrent invocations may over-terminate workers, and X-Ray trace parenting is disabled",
+			"max_concurrency", concurrency)
+	}
+
 	tp := tracing.InitOtelXrayTracer(ctx, logger, true)
 	defer func(ctx context.Context) {
 		err := tp.Shutdown(ctx)
