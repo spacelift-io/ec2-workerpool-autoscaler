@@ -3,7 +3,7 @@ module github.com/spacelift-io/awsautoscalr
 go 1.27.0
 
 require (
-	cloud.google.com/go/compute v1.67.0
+	cloud.google.com/go/compute v1.68.0
 	cloud.google.com/go/secretmanager v1.21.0
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.23.1
 	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.14.1
@@ -31,7 +31,7 @@ require (
 	go.opentelemetry.io/otel/exporters/stdout/stdouttrace v1.46.0
 	go.opentelemetry.io/otel/sdk v1.46.0
 	go.opentelemetry.io/otel/trace v1.46.0
-	google.golang.org/api v0.295.0
+	google.golang.org/api v0.297.0
 )
 
 require (
