@@ -20,7 +20,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/ssm v1.77.0
 	github.com/caarlos0/env/v11 v11.4.1
 	github.com/shurcooL/graphql v0.0.0-20240915155400-7ee5256398cf
-	github.com/spacelift-io/spacectl v1.25.0
+	github.com/spacelift-io/spacectl v1.26.0
 	github.com/stretchr/testify v1.12.1
 	go.opentelemetry.io/contrib/detectors/aws/lambda v0.71.0
 	go.opentelemetry.io/contrib/instrumentation/github.com/aws/aws-lambda-go/otellambda v0.71.0
